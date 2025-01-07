@@ -99,8 +99,8 @@ export class WebSocketManager {
 
   private async checkBackendAndReconnect() {
     try {
-      const healthUrl = this.url.replace('ws://', 'http://').replace('/ws/', '/health');
-      const response = await fetch(healthUrl, { method: 'HEAD' });
+      const healthUrl = this.url.replace('ws://', 'http://').replace(/\/ws\/.+/, '/health');
+      const response = await fetch(healthUrl);
       
       if (response.ok) {
         console.log('Backend is available, attempting reconnect');

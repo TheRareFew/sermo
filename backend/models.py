@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -22,7 +21,7 @@ print(f"Looking for .env at: {env_path}")
 
 if env_path.exists():
     print(f"Loading .env from: {env_path}")
-    load_dotenv(env_path, override=True)  # Force override
+    load_dotenv(env_path, override=True)
 else:
     print(f"Warning: .env file not found at {env_path}")
 
@@ -35,7 +34,7 @@ if not DATABASE_URL:
     sys.exit(1)
 
 try:
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(DATABASE_URL, future=True)
     # Test the connection
     with engine.connect() as conn:
         pass
@@ -44,9 +43,15 @@ except OperationalError as e:
     print(f"Using DATABASE_URL: {DATABASE_URL}")
     sys.exit(1)
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
+# Use declarative_base from orm instead of ext.declarative
 Base = declarative_base()
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    future=True
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -55,12 +60,14 @@ class Message(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     content = Column(String)
-    sender = Column(String)  # display name
-    account_name = Column(String, nullable=False)  # account name
+    sender = Column(String)
+    account_name = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    channel_id = Column(String, nullable=True)
+    channel_id = Column(Integer, ForeignKey("channels.id"))
+    message_type = Column(String, default="message")
     recipient_id = Column(String, nullable=True)
-    message_type = Column(String)
+    
+    channel = relationship("Channel", back_populates="messages")
 
 class User(Base):
     __tablename__ = "users"
@@ -79,8 +86,39 @@ class User(Base):
     def verify_password(self, password: str) -> bool:
         return pwd_context.verify(password, self.password_hash)
 
-# Only create tables if they don't exist
-Base.metadata.create_all(bind=engine, checkfirst=True)
+class Channel(Base):
+    __tablename__ = "channels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    messages = relationship("Message", back_populates="channel")
+
+def init_db():
+    # Drop all tables in correct order
+    Message.__table__.drop(engine, checkfirst=True)
+    Channel.__table__.drop(engine, checkfirst=True)
+    User.__table__.drop(engine, checkfirst=True)
+    
+    # Recreate all tables
+    Base.metadata.create_all(bind=engine)
+    
+    # Create a default channel
+    db = SessionLocal()
+    try:
+        default_channel = Channel(name="General")
+        db.add(default_channel)
+        db.commit()
+        print("Created default channel")
+    except Exception as e:
+        print(f"Error creating default channel: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+if __name__ == "__main__":
+    init_db()
 
 def get_db():
     db = SessionLocal()

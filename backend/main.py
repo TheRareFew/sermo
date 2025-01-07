@@ -5,7 +5,10 @@ from typing import List, Dict
 import json
 from datetime import datetime
 from sqlalchemy.orm import Session
-from backend.models import get_db, Message as DBMessage, User
+from backend.models import get_db, Message as DBMessage, User, Channel
+import asyncio
+from pydantic import BaseModel
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -23,13 +26,14 @@ class ConnectionManager:
             "channels": {},
             "direct_messages": {}
         }
-
+        
     async def connect(self, websocket: WebSocket, client_id: str, connection_type: str, target_id: str):
         await websocket.accept()
         if connection_type == "channel":
             if target_id not in self.active_connections["channels"]:
                 self.active_connections["channels"][target_id] = {}
             self.active_connections["channels"][target_id][client_id] = websocket
+            
         else:  # direct message
             if target_id not in self.active_connections["direct_messages"]:
                 self.active_connections["direct_messages"][target_id] = {}
@@ -44,33 +48,63 @@ class ConnectionManager:
                 self.active_connections["direct_messages"][target_id].pop(client_id, None)
 
     async def broadcast_to_channel(self, message: dict, channel_id: str, db: Session):
+        print(f"\n=== Broadcasting message to channel {channel_id} ===")
+        print(f"Message content: {message}")
+        
         if message.get('action') == 'delete':
             # Handle delete message broadcasting without saving to DB
             if channel_id in self.active_connections["channels"]:
                 for connection in self.active_connections["channels"][channel_id].values():
-                    await connection.send_text(json.dumps(message))
+                    try:
+                        await connection.send_text(json.dumps(message))
+                    except Exception as e:
+                        print(f"Error broadcasting delete message: {e}")
             return
 
-        # Save message to database
-        db_message = DBMessage(
-            content=message["content"],
-            sender=message["sender"],
-            account_name=message["accountName"],
-            timestamp=datetime.fromisoformat(message["timestamp"]),
-            channel_id=channel_id,
-            message_type=message.get("type", "message")
-        )
-        db.add(db_message)
-        db.commit()
-        db.refresh(db_message)
-
-        # Update message with database ID
-        message["id"] = str(db_message.id)
-
-        # Broadcast to all connected clients
-        if channel_id in self.active_connections["channels"]:
-            for connection in self.active_connections["channels"][channel_id].values():
-                await connection.send_text(json.dumps(message))
+        try:
+            channel_id_int = int(channel_id)
+            
+            # Debug the message creation
+            db_message = DBMessage(
+                content=message.get('content'),
+                sender=message.get('sender'),
+                channel_id=channel_id_int,
+                account_name=message.get('accountName'),
+                timestamp=datetime.now(),
+                message_type=message.get('type', 'message')
+            )
+            
+            print(f"Created message: {db_message.__dict__}")
+            
+            db.add(db_message)
+            db.commit()
+            db.refresh(db_message)
+            
+            print(f"Saved message with ID: {db_message.id}")
+            
+            # Verify message was saved
+            saved_message = db.query(DBMessage).get(db_message.id)
+            print(f"Retrieved saved message: {saved_message.__dict__}")
+            
+            # Update the message with database info
+            message['id'] = str(db_message.id)
+            message['channelId'] = str(channel_id_int)
+            
+            # Debug websocket connections
+            print(f"Active connections for channel {channel_id}: {self.active_connections['channels'].get(channel_id, {})}")
+            
+            if channel_id in self.active_connections["channels"]:
+                for connection in self.active_connections["channels"][channel_id].values():
+                    try:
+                        await connection.send_text(json.dumps(message))
+                        print(f"Successfully sent message to connection")
+                    except Exception as e:
+                        print(f"Error sending to connection: {e}")
+        except Exception as e:
+            print(f"Error in broadcast_to_channel: {str(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            db.rollback()
 
     async def send_direct_message(self, message: dict, from_id: str, to_id: str, db: Session):
         # Save message to database
@@ -89,39 +123,99 @@ class ConnectionManager:
         message["id"] = str(db_message.id)
 
         # Send to connected clients
-        if to_id in self.active_connections["direct_messages"]:
-            for connection in self.active_connections["direct_messages"][to_id].values():
+        if to_id in self.active_connections:
+            for connection in self.active_connections[to_id]:
                 await connection.send_text(json.dumps(message))
-        if from_id in self.active_connections["direct_messages"]:
-            for connection in self.active_connections["direct_messages"][from_id].values():
+        if from_id in self.active_connections:
+            for connection in self.active_connections[from_id]:
                 await connection.send_text(json.dumps(message))
+
+    async def update_user_status(self, channel: str, username: str, status: str):
+        if channel in self.user_statuses:
+            self.user_statuses[channel][username] = status
+            await self.broadcast_user_list(channel)
 
 manager = ConnectionManager()
 
 # Add endpoints to fetch message history
 @app.get("/api/messages/channel/{channel_id}")
-async def get_channel_messages(channel_id: str, db: Session = Depends(get_db)):
-    messages = db.query(DBMessage).filter(
-        DBMessage.channel_id == channel_id
-    ).order_by(DBMessage.timestamp.asc()).all()  # Add ordering
+def get_channel_messages(
+    channel_id: str, 
+    page: int = 0,
+    db: Session = Depends(get_db)
+):
+    print(f"\n=== Fetching messages for channel {channel_id} ===")
     
-    # Add debug logging
-    print(f"Fetching messages for channel {channel_id}")
-    print(f"Found {len(messages)} messages")
-    
-    result = [
-        {
-            "id": str(m.id),
-            "content": m.content,
-            "sender": m.sender,
-            "accountName": m.account_name,
-            "timestamp": m.timestamp.isoformat(),
-            "type": m.message_type or "message"  # Ensure type is never null
-        } for m in messages
-    ]
-    
-    print("Returning messages:", result)
-    return result
+    try:
+        channel_id_int = int(channel_id)
+        print(f"Looking for channel with ID: {channel_id_int}")
+        
+        # Debug: Print all channels
+        all_channels = db.query(Channel).all()
+        print("\nAll channels:")
+        for ch in all_channels:
+            print(f"- Channel {ch.id}: {ch.name}")
+        
+        # Get the channel
+        channel = db.query(Channel).get(channel_id_int)
+        if not channel:
+            print(f"Channel {channel_id} not found")
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Channel {channel_id} not found"}
+            )
+            
+        print(f"\nFound channel: {channel.name} (ID: {channel.id})")
+        
+        # Debug: Print all messages in database
+        all_messages = db.query(DBMessage).all()
+        print("\nAll messages in database:")
+        for msg in all_messages:
+            print(f"- Message {msg.id}: channel_id={msg.channel_id}, content={msg.content[:30]}")
+        
+        # Get messages for this channel
+        messages = db.query(DBMessage)\
+            .filter(DBMessage.channel_id == channel.id)\
+            .order_by(DBMessage.timestamp.asc())\
+            .all()
+            
+        print(f"\nFound {len(messages)} messages for channel {channel_id}")
+        for msg in messages:
+            print(f"- Message {msg.id}: {msg.content[:30]}")
+        
+        result = {
+            "messages": [
+                {
+                    "id": str(m.id),
+                    "content": m.content,
+                    "sender": m.sender,
+                    "accountName": m.account_name,
+                    "timestamp": m.timestamp.isoformat(),
+                    "type": m.message_type or "message",
+                    "channelId": str(m.channel_id)
+                } for m in messages
+            ],
+            "totalMessages": len(messages),
+            "hasMore": False,
+            "channelId": str(channel.id)
+        }
+        
+        print(f"\nReturning result: {result}")
+        return JSONResponse(content=result)
+        
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid channel ID format"}
+        )
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
 
 @app.get("/api/messages/direct/{user_id}")
 async def get_direct_messages(user_id: str, db: Session = Depends(get_db)):
@@ -142,25 +236,23 @@ async def get_direct_messages(user_id: str, db: Session = Depends(get_db)):
     ]
 
 @app.delete("/api/messages/{message_id}")
-async def delete_message(message_id: str, account_name: str = None, db: Session = Depends(get_db)):
-    if not account_name:
-        return {"status": "error", "message": "Account name is required"}
+async def delete_message(
+    message_id: str,
+    account_name: str,
+    db: Session = Depends(get_db)
+):
+    message = db.query(DBMessage).filter(
+        DBMessage.id == message_id,
+        DBMessage.account_name == account_name
+    ).first()
+    
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
         
-    try:
-        # Convert string ID to integer for database query
-        message = db.query(DBMessage).filter(
-            DBMessage.id == int(message_id),
-            DBMessage.account_name == account_name
-        ).first()
-        
-        if message:
-            db.delete(message)
-            db.commit()
-            return {"status": "success"}
-        return {"status": "message not found or unauthorized"}
-    except Exception as e:
-        print(f"Error deleting message: {e}")
-        return {"status": "error", "message": str(e)}
+    db.delete(message)
+    db.commit()
+    
+    return {"status": "success"}
 
 @app.websocket("/ws/{connection_type}/{client_id}/{target_id}")
 async def websocket_endpoint(
@@ -171,40 +263,29 @@ async def websocket_endpoint(
     db: Session = Depends(get_db)
 ):
     try:
+        print(f"New WebSocket connection: {connection_type}/{client_id}/{target_id}")
         await manager.connect(websocket, client_id, connection_type, target_id)
         while True:
             data = await websocket.receive_text()
+            print(f"Received WebSocket message: {data}")
             message_data = json.loads(data)
             
-            if message_data.get('action') == 'delete':
-                # Handle delete action
+            # Handle regular messages
+            if message_data.get('content'):
+                print(f"Processing message with content: {message_data}")
+                await manager.broadcast_to_channel(message_data, target_id, db)
+            # Handle delete action
+            elif message_data.get('action') == 'delete':
                 delete_message = {
                     "action": "delete",
                     "messageId": message_data["messageId"],
                     "timestamp": datetime.now().isoformat()
                 }
-                if connection_type == "channel":
-                    await manager.broadcast_to_channel(delete_message, target_id, db)
-                continue
-
-            # Regular message handling (no system messages)
-            message = {
-                "id": message_data.get("id", str(datetime.now().timestamp())),
-                "content": message_data["content"],
-                "sender": message_data["sender"],
-                "accountName": message_data["accountName"],
-                "timestamp": message_data.get("timestamp", datetime.now().isoformat()),
-                "type": message_data.get("type", "message")
-            }
-            
-            if connection_type == "channel":
-                await manager.broadcast_to_channel(message, target_id, db)
-            else:
-                await manager.send_direct_message(message, client_id, target_id, db)
+                await manager.broadcast_to_channel(delete_message, target_id, db)
                 
-    except WebSocketDisconnect:
+    except Exception as e:
+        print(f"Error in websocket endpoint: {e}")
         manager.disconnect(client_id, connection_type, target_id)
-        # No system message on disconnect
 
 @app.get("/")
 async def root():
@@ -256,4 +337,38 @@ async def register(user_data: dict, db: Session = Depends(get_db)):
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+# Add Pydantic model for channel
+class ChannelCreate(BaseModel):
+    name: str
+
+class ChannelResponse(BaseModel):
+    id: int
+    name: str
+    
+    class Config:
+        orm_mode = True
+
+# Add endpoints for channels
+@app.post("/api/channels", response_model=ChannelResponse)
+async def create_channel(channel: ChannelCreate, db: Session = Depends(get_db)):
+    # Check if channel already exists
+    if db.query(Channel).filter(Channel.name == channel.name).first():
+        raise HTTPException(status_code=400, detail="Channel already exists")
+    
+    # Create new channel
+    db_channel = Channel(name=channel.name)
+    try:
+        db.add(db_channel)
+        db.commit()
+        db.refresh(db_channel)
+        return db_channel
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/channels", response_model=List[ChannelResponse])
+async def get_channels(db: Session = Depends(get_db)):
+    channels = db.query(Channel).all()
+    return channels
 
