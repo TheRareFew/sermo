@@ -400,3 +400,37 @@ All endpoints require authentication using JWT tokens.
 - Channel membership validation
 - Error handling and logging
 - Connection management 
+
+## Test Data Generation
+
+The application includes a test data generation script located at `app/scripts/generate_test_data.py`. This script uses the Faker library to generate realistic test data for all models in the application.
+
+### Generated Data Includes:
+- Users with randomized usernames, emails, and profile information
+- Channels (both regular and direct message channels)
+- Messages with realistic content and threaded replies
+- File attachments with various types (images, PDFs, text files)
+- User presence information
+
+### Usage
+To generate test data, run:
+```bash
+python -m app.scripts.generate_test_data
+```
+
+### Default Generation Parameters:
+- 10 users (all with password "testpassword123")
+- 5 channels
+- 20 messages per channel (with 30% chance of having 1-3 replies)
+- File attachments on 20% of messages
+- Presence records for all users
+
+### Data Characteristics:
+- Users have realistic names, emails, and usernames
+- Channels have a mix of regular and direct message types
+- Messages include paragraphs of realistic text
+- Files have appropriate extensions and size ranges
+- Timestamps are distributed over the last 30 days
+- User statuses randomly set to online/offline/away/busy
+
+The generated data maintains referential integrity and follows all model constraints. 

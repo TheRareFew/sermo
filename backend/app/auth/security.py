@@ -65,3 +65,11 @@ async def rotate_refresh_token(user_id: int, old_token: str, new_token: str, db:
         db_token.revoked = True
     await store_refresh_token(user_id, new_token, db)
     db.commit() 
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against a hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    """Generate a password hash."""
+    return pwd_context.hash(password) 
