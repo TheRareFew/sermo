@@ -12,9 +12,10 @@ from ..deps import get_db, get_current_user
 from ...models.user import User
 
 router = APIRouter()
+channel_router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.get("/channels/{channel_id}/messages", response_model=List[Message])
+@channel_router.get("/{channel_id}/messages", response_model=List[Message])
 async def get_channel_messages(
     channel_id: int,
     skip: int = 0,
@@ -48,7 +49,7 @@ async def get_channel_messages(
         logger.error(f"Database error in get_channel_messages: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.post("/channels/{channel_id}/messages", response_model=Message)
+@channel_router.post("/{channel_id}/messages", response_model=Message)
 async def create_message(
     channel_id: int,
     message: MessageCreate,
@@ -57,6 +58,9 @@ async def create_message(
 ):
     """Create new message in channel"""
     try:
+        if not message.content.strip():
+            raise HTTPException(status_code=422, detail="Message content cannot be empty")
+
         # Check channel access
         channel = db.query(Channel).filter(Channel.id == channel_id).first()
         if not channel:
@@ -90,6 +94,9 @@ async def update_message(
 ):
     """Update message"""
     try:
+        if not message.content.strip():
+            raise HTTPException(status_code=422, detail="Message content cannot be empty")
+
         db_message = db.query(MessageModel).filter(MessageModel.id == message_id).first()
         if not db_message:
             raise HTTPException(status_code=404, detail="Message not found")
@@ -173,6 +180,9 @@ async def create_message_reply(
 ):
     """Create reply to message"""
     try:
+        if not reply.content.strip():
+            raise HTTPException(status_code=422, detail="Reply content cannot be empty")
+
         # Check parent message exists and user has access
         parent_message = db.query(MessageModel).filter(MessageModel.id == message_id).first()
         if not parent_message:
@@ -228,4 +238,27 @@ async def get_message_thread(
 
     except SQLAlchemyError as e:
         logger.error(f"Database error in get_message_thread: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/{message_id}", response_model=Message)
+async def get_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific message"""
+    try:
+        # Check message exists and user has access
+        message = db.query(MessageModel).filter(MessageModel.id == message_id).first()
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+
+        channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
+        if current_user.id not in [member.id for member in channel.members]:
+            raise HTTPException(status_code=403, detail="Not authorized to view this message")
+
+        return message
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_message: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") 

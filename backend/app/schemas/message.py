@@ -1,9 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, constr
 from typing import Optional, List
 from datetime import datetime
 
 class MessageBase(BaseModel):
-    content: str
+    content: constr(min_length=1, strip_whitespace=True) = Field(..., description="Message content")
 
 class MessageCreate(MessageBase):
     pass
@@ -12,7 +12,7 @@ class MessageUpdate(MessageBase):
     pass
 
 class MessageReply(MessageBase):
-    parent_id: int
+    pass
 
 class Message(MessageBase):
     id: int

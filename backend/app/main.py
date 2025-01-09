@@ -18,6 +18,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(channels.router, prefix="/api/channels", tags=["channels"])
+app.include_router(messages.channel_router, prefix="/api/channels", tags=["messages"])
 app.include_router(messages.router, prefix="/api/messages", tags=["messages"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(reactions.router, prefix="/api/messages", tags=["reactions"])
