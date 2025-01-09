@@ -55,26 +55,6 @@ async def update_current_user_info(
         db.rollback()
         raise HTTPException(status_code=500, detail="Could not update user")
 
-@router.get("/{user_id}", response_model=User)
-async def get_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
-):
-    """Get user by ID"""
-    try:
-        user = db.query(UserModel).filter(UserModel.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        return user
-
-    except SQLAlchemyError as e:
-        logger.error(f"Database error in get_user: {e}")
-        raise HTTPException(status_code=500, detail="Could not fetch user")
-
 @router.get("/", response_model=List[User])
 async def get_users(
     skip: int = 0,
@@ -96,6 +76,55 @@ async def get_users(
     except SQLAlchemyError as e:
         logger.error(f"Database error in get_users: {e}")
         raise HTTPException(status_code=500, detail="Could not fetch users")
+
+@router.get("/presence", response_model=List[UserPresence])
+async def get_users_presence(
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """Get users presence information"""
+    try:
+        # Get presence info for all active users
+        users = (
+            db.query(UserModel)
+            .filter(UserModel.is_active == True)
+            .all()
+        )
+
+        presence_info = [
+            UserPresence(
+                user_id=user.id,
+                username=user.username,
+                status=user.status or "offline",
+                last_seen=user.last_seen or datetime.utcnow()
+            )
+            for user in users
+        ]
+        return presence_info
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_users_presence: {e}")
+        raise HTTPException(status_code=500, detail="Could not fetch user presence")
+
+@router.get("/{user_id}", response_model=User)
+async def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """Get user by ID"""
+    try:
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        return user
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_user: {e}")
+        raise HTTPException(status_code=500, detail="Could not fetch user")
 
 @router.put("/me/profile-picture", response_model=User)
 async def update_profile_picture(
@@ -151,43 +180,14 @@ async def update_status(
         db.rollback()
         raise HTTPException(status_code=500, detail="Could not update status")
 
-@router.get("/presence", response_model=List[UserPresence])
-async def get_users_presence(
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
-):
-    """Get users presence information"""
-    try:
-        # Get presence info for all active users
-        users = (
-            db.query(UserModel)
-            .filter(UserModel.is_active == True)
-            .all()
-        )
-
-        presence_info = [
-            UserPresence(
-                user_id=user.id,
-                username=user.username,
-                status=user.status,
-                last_seen=user.last_seen
-            )
-            for user in users
-        ]
-        return presence_info
-
-    except SQLAlchemyError as e:
-        logger.error(f"Database error in get_users_presence: {e}")
-        raise HTTPException(status_code=500, detail="Could not fetch user presence")
-
 async def save_profile_picture(file: UploadFile, user_id: int) -> str:
     """Helper function to save profile picture"""
     # Implementation depends on your file storage solution
     # This is a placeholder - implement actual file storage logic
     try:
-        file_location = f"uploads/profile_pictures/{user_id}_{file.filename}"
+        file_location = f"backend/uploads/profile_pictures/{user_id}_{file.filename}"
         with open(file_location, "wb+") as file_object:
-            file_object.write(file.file.read())
+            file_object.write(await file.read())
         return f"/profile_pictures/{user_id}_{file.filename}"
     except Exception as e:
         logger.error(f"Error saving profile picture: {e}")

@@ -77,6 +77,8 @@ def test_user(test_db):
         full_name="Test User",
         hashed_password=get_password_hash("testpassword"),
         is_active=True,
+        status="online",
+        last_seen=datetime.now(UTC),
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC)
     )
@@ -99,3 +101,22 @@ def test_upload_file():
     yield file_path
     if file_path.exists():
         file_path.unlink() 
+
+@pytest.fixture
+def test_other_user(test_db) -> User:
+    """Create another test user."""
+    user = User(
+        username="otheruser",
+        email="other@example.com",
+        full_name="Other User",
+        hashed_password="dummyhash",
+        is_active=True,
+        status="offline",
+        last_seen=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+    return user 

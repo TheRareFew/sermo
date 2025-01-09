@@ -37,5 +37,5 @@ class User(UserBase):
 class UserPresence(BaseModel):
     user_id: int
     username: str
-    status: str
-    last_seen: datetime 
+    status: str = "offline"
+    last_seen: Optional[datetime] = None 
