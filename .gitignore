@@ -1,1 +1,4 @@
 .cursorrules
+*.test.txt
+*_test.txt
+large_test_file.txt
