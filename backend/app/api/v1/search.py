@@ -30,6 +30,10 @@ async def search_messages(
 ):
     """Search messages across all channels the user has access to"""
     try:
+        # Return empty list for empty query
+        if not query.strip():
+            return []
+
         # Get all channels the user is a member of
         user_channels = (
             db.query(Channel.id)
@@ -86,6 +90,10 @@ async def search_files(
 ):
     """Search files across all channels the user has access to"""
     try:
+        # Return empty list for empty query
+        if not query.strip():
+            return []
+
         # Get all channels the user is a member of
         user_channels = (
             db.query(Channel.id)
@@ -100,8 +108,9 @@ async def search_files(
                 File,
                 Channel.name.label('channel_name')
             )
-            .join(Message)
-            .join(Channel)
+            .select_from(File)
+            .join(Message, File.message_id == Message.id)
+            .join(Channel, Message.channel_id == Channel.id)
             .filter(
                 and_(
                     Message.channel_id.in_(user_channels),
@@ -111,7 +120,7 @@ async def search_files(
                     )
                 )
             )
-            .order_by(File.uploaded_at.desc())
+            .order_by(File.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -123,8 +132,8 @@ async def search_files(
                 id=file.File.id,
                 filename=file.File.filename,
                 file_type=file.File.file_type,
-                file_url=file.File.file_url,
-                uploaded_at=file.File.uploaded_at,
+                file_path=file.File.file_path,
+                created_at=file.File.created_at,
                 channel_id=file.File.message.channel_id,
                 channel_name=file.channel_name
             )
@@ -147,6 +156,10 @@ async def search_channels(
 ):
     """Search channels the user has access to"""
     try:
+        # Return empty list for empty query
+        if not query.strip():
+            return []
+
         # Search channels
         channels = (
             db.query(

@@ -22,8 +22,8 @@ class FileSearchResult(BaseModel):
     id: int
     filename: str
     file_type: str
-    file_url: str
-    uploaded_at: datetime
+    file_path: str
+    created_at: datetime
     channel_id: int
     channel_name: str
     
@@ -33,7 +33,7 @@ class FileSearchResult(BaseModel):
 class ChannelSearchResult(BaseModel):
     id: int
     name: str
-    description: Optional[str]
+    description: Optional[str] = None
     is_direct_message: bool
     member_count: int
     
