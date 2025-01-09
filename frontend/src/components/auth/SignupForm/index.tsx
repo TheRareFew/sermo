@@ -55,6 +55,12 @@ const SignupBox = styled.div`
   }
 `;
 
+const Header = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+`;
+
 const Title = styled.h1`
   font-family: 'VT323', monospace;
   color: ${props => props.theme.colors.text};
@@ -66,24 +72,27 @@ const Title = styled.h1`
 const Form = styled.form`
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
+
+  /* Add some space before the submit button */
+  & > button {
+    margin-top: 8px;
+  }
 `;
 
-const ButtonContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-top: 16px;
-`;
-
-const BackButton = styled(Button)`
+const StyledButton = styled.button`
   background: none;
-  border: 2px solid ${props => props.theme.colors.primary};
+  border: none;
+  font-family: 'VT323', monospace;
   color: ${props => props.theme.colors.primary};
+  text-decoration: none;
+  text-transform: uppercase;
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: 0;
 
   &:hover {
-    background: ${props => props.theme.colors.primary};
-    color: ${props => props.theme.colors.background};
+    color: ${props => props.theme.colors.text};
   }
 `;
 
@@ -151,6 +160,11 @@ const SignupForm: React.FC<SignupFormProps> = ({ onLoginClick }) => {
   return (
     <SignupContainer>
       <SignupBox>
+        <Header>
+          <StyledButton onClick={onLoginClick}>
+            Back to Login
+          </StyledButton>
+        </Header>
         <AsciiArt>
           {`
    ____  _____ ____  __  __  ___  
@@ -206,22 +220,13 @@ const SignupForm: React.FC<SignupFormProps> = ({ onLoginClick }) => {
             fullWidth
             required
           />
-          <ButtonContainer>
-            <Button
-              type="submit"
-              fullWidth
-              disabled={loading}
-            >
-              {loading ? 'Creating Account...' : 'Create Account'}
-            </Button>
-            <BackButton
-              type="button"
-              fullWidth
-              onClick={onLoginClick}
-            >
-              Back to Login
-            </BackButton>
-          </ButtonContainer>
+          <Button
+            type="submit"
+            fullWidth
+            disabled={loading}
+          >
+            {loading ? 'Creating Account...' : 'Create Account'}
+          </Button>
           {error && <ErrorMessage>{error}</ErrorMessage>}
         </Form>
       </SignupBox>

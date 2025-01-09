@@ -16,13 +16,13 @@ const InputWrapper = styled.div<{ fullWidth?: boolean }>`
   display: flex;
   flex-direction: column;
   width: ${props => props.fullWidth ? '100%' : 'auto'};
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 `;
 
 const Label = styled.label`
   font-family: 'VT323', monospace;
   color: ${props => props.theme.colors.text};
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   text-transform: uppercase;
 `;
 
@@ -72,7 +72,7 @@ const Cursor = styled.span<{ isVisible: boolean }>`
 const ErrorText = styled.span`
   font-family: 'VT323', monospace;
   color: ${props => props.theme.colors.error};
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 0.875rem;
 `;
 

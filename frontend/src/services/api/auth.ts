@@ -1,4 +1,5 @@
-import { User } from '../../store/types';
+import { User, AuthResponse } from '../../types';
+import { apiRequest, API_URL } from './utils';
 
 interface LoginCredentials {
   username: string;
@@ -12,17 +13,22 @@ interface SignupCredentials {
   full_name: string;
 }
 
-interface AuthResponse {
-  user: User;
-  token: string;
-}
-
 interface ApiError {
   detail?: string | { msg: string }[];
   message?: string;
 }
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+interface ApiAuthResponse {
+  access_token: string;
+  token_type: string;
+  refresh_token: string;
+  user?: {
+    id: number;
+    username: string;
+    email: string;
+    full_name: string;
+  };
+}
 
 const formatErrorMessage = (error: ApiError): string => {
   if (typeof error.detail === 'string') {
@@ -36,6 +42,19 @@ const formatErrorMessage = (error: ApiError): string => {
   }
   return error.message || 'An error occurred';
 };
+
+const transformAuthResponse = (apiResponse: ApiAuthResponse): AuthResponse => ({
+  user: apiResponse.user || {
+    id: 0,
+    username: '',
+    email: '',
+    full_name: '',
+    status: 'online',
+    last_seen: new Date().toISOString(),
+  },
+  token: apiResponse.access_token,
+  refresh_token: apiResponse.refresh_token,
+});
 
 export const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {
   // Convert credentials to FormData as expected by the backend
@@ -55,12 +74,13 @@ export const login = async (credentials: LoginCredentials): Promise<AuthResponse
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(formatErrorMessage(data));
+    throw new Error(formatErrorMessage(data as any));
   }
 
   // Store the token in localStorage
-  localStorage.setItem('auth_token', data.token);
-  return data;
+  localStorage.setItem('auth_token', data.access_token);
+  console.log('Stored token:', data.access_token); // Debug log
+  return transformAuthResponse(data);
 };
 
 export const signup = async (credentials: SignupCredentials): Promise<AuthResponse> => {
@@ -76,61 +96,48 @@ export const signup = async (credentials: SignupCredentials): Promise<AuthRespon
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(formatErrorMessage(data));
+    throw new Error(formatErrorMessage(data as any));
   }
 
   // Store the token in localStorage
-  localStorage.setItem('auth_token', data.token);
-  return data;
+  localStorage.setItem('auth_token', data.access_token);
+  console.log('Stored token:', data.access_token); // Debug log
+  return transformAuthResponse(data);
 };
 
 export const forgotPassword = async (email: string): Promise<void> => {
-  const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
+  await apiRequest('/api/auth/forgot-password', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({ email }),
-    credentials: 'include',
+    requiresAuth: false,
   });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(formatErrorMessage(data));
-  }
 };
 
 export const logout = async (): Promise<void> => {
-  const token = localStorage.getItem('auth_token');
-  if (!token) return;
-
-  try {
-    const response = await fetch(`${API_URL}/api/auth/logout`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(formatErrorMessage(data));
-    }
-  } finally {
-    // Always remove the token from localStorage
-    localStorage.removeItem('auth_token');
-  }
+  await apiRequest('/api/auth/logout', {
+    method: 'POST',
+  });
+  localStorage.removeItem('auth_token');
 };
 
 // Helper function to get the auth token
 export const getAuthToken = (): string | null => {
-  return localStorage.getItem('auth_token');
+  const token = localStorage.getItem('auth_token');
+  return token ? token : null;
 };
 
 // Helper function to check if user is authenticated
 export const isAuthenticated = (): boolean => {
-  return !!getAuthToken();
+  const token = getAuthToken();
+  if (!token) return false;
+  
+  try {
+    // Basic validation - check if token is expired
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const expirationTime = payload.exp * 1000; // Convert to milliseconds
+    return Date.now() < expirationTime;
+  } catch (error) {
+    console.error('Error validating token:', error);
+    return false;
+  }
 }; 

@@ -1,15 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './auth/authSlice';
-import channelsReducer from './channels/channelsSlice';
-import messagesReducer from './messages/messagesSlice';
-import usersReducer from './users/usersSlice';
+import chatReducer from './chat/chatSlice';
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
-    channels: channelsReducer,
-    messages: messagesReducer,
-    users: usersReducer,
+    chat: chatReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -20,4 +16,5 @@ export const store = configureStore({
     }),
 });
 
+export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch; 
