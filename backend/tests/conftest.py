@@ -47,12 +47,15 @@ def test_db():
     Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture
-def test_app(test_db, test_user):
+def test_app(test_db):
     """Create a test FastAPI application."""
-    async def override_get_current_user():
-        return test_user
+    def override_get_db():
+        try:
+            yield test_db
+        finally:
+            test_db.close()
 
-    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_db] = override_get_db
     
     # Create a new TestClient with the overridden dependencies
     with TestClient(app) as client:

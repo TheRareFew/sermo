@@ -110,8 +110,15 @@ async def get_reactions(
 
         # Check channel access
         channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
+        if not channel:
+            raise HTTPException(status_code=404, detail="Channel not found")
+            
+        # Check if user is a member of the channel
         if current_user.id not in [member.id for member in channel.members]:
-            raise HTTPException(status_code=403, detail="Not authorized to view this message")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to view reactions in this channel"
+            )
 
         reactions = (
             db.query(ReactionModel)
