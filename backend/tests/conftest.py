@@ -28,7 +28,12 @@ def test_db():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    TestingSessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+        expire_on_commit=False  # This prevents detached instance errors
+    )
     session_factory = scoped_session(TestingSessionLocal)
     Base.metadata.create_all(bind=engine)
 
@@ -37,7 +42,7 @@ def test_db():
         try:
             yield db
         finally:
-            db.close()
+            pass  # Don't close the session here
 
     app.dependency_overrides[get_db] = override_get_db
     db = session_factory()

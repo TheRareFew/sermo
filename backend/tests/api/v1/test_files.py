@@ -8,6 +8,26 @@ from app.models.channel import Channel
 from fastapi.testclient import TestClient
 from datetime import datetime, UTC
 from pathlib import Path
+from app.api.deps import get_current_user, get_db
+from app.main import app
+
+@pytest.fixture(autouse=True)
+def override_dependencies(test_user, test_db):
+    # Override get_current_user
+    async def mock_get_current_user():
+        return test_db.merge(test_user)
+    
+    # Override get_db to use test_db
+    def mock_get_db():
+        try:
+            yield test_db
+        finally:
+            pass  # Don't close the session here, it's managed by the test_db fixture
+    
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    app.dependency_overrides[get_db] = mock_get_db
+    yield
+    app.dependency_overrides.clear()
 
 @pytest.fixture
 def test_upload_file():
@@ -66,10 +86,10 @@ def test_upload_file(
     assert data["filename"].endswith(".txt")
     assert data["file_type"] == "text/plain"
     assert data["message_id"] == message.id
-    
-    # Cleanup uploaded file
-    if os.path.exists(data["file_path"]):
-        os.remove(data["file_path"])
+    assert data["uploaded_by_id"] == test_user.id
+    assert "file_size" in data
+    assert isinstance(data["file_size"], int)
+    assert data["file_size"] > 0
 
 def test_upload_file_too_large(
     test_client: TestClient,
@@ -81,26 +101,33 @@ def test_upload_file_too_large(
     _, message = test_channel_with_message
     headers = {"Authorization": f"Bearer {test_user_token}"}
     
-    # Create a temporary large file
+    # Create a temporary file just over the limit (51MB)
     large_file = Path("large_test_file.txt")
+    file_size = (50 * 1024 * 1024) + 1024  # 50MB + 1KB
+    
+    # Create a sparse file instead of writing actual data
     with open(large_file, "wb") as f:
-        f.write(b"0" * (51 * 1024 * 1024))  # 51MB file
+        f.seek(file_size - 1)
+        f.write(b"\0")
     
+    # Open and close the file in separate blocks to ensure proper cleanup
+    with open(large_file, "rb") as f:
+        files = {"file": ("large_file.txt", f, "text/plain")}
+        response = test_client.post(
+            f"/api/files/upload?message_id={message.id}",
+            headers=headers,
+            files=files
+        )
+    
+    assert response.status_code == 413
+    assert "File too large" in response.json()["detail"]
+    
+    # Cleanup after ensuring the file is closed
     try:
-        with open(large_file, "rb") as f:
-            files = {"file": ("large_file.txt", f, "text/plain")}
-            response = test_client.post(
-                f"/api/files/upload?message_id={message.id}",
-                headers=headers,
-                files=files
-            )
-        
-        assert response.status_code == 413
-        assert "File too large" in response.json()["detail"]
-    
-    finally:
         if large_file.exists():
-            large_file.unlink()
+            large_file.unlink(missing_ok=True)
+    except Exception as e:
+        print(f"Warning: Could not delete test file: {e}")
 
 def test_upload_invalid_file_type(
     test_client: TestClient,

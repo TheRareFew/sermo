@@ -5,6 +5,26 @@ from app.models.channel import Channel
 from app.models.message import Message
 from fastapi.testclient import TestClient
 from datetime import datetime, UTC
+from app.api.deps import get_current_user, get_db
+from app.main import app
+
+@pytest.fixture(autouse=True)
+def override_dependencies(test_user, test_db):
+    # Override get_current_user
+    async def mock_get_current_user():
+        return test_db.merge(test_user)
+    
+    # Override get_db to use test_db
+    def mock_get_db():
+        try:
+            yield test_db
+        finally:
+            pass  # Don't close the session here, it's managed by the test_db fixture
+    
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    app.dependency_overrides[get_db] = mock_get_db
+    yield
+    app.dependency_overrides.clear()
 
 @pytest.fixture
 def test_channel_with_messages(test_db: Session, test_user: User) -> tuple[Channel, list[Message]]:

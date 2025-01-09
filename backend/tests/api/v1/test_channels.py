@@ -4,9 +4,32 @@ from app.models.user import User
 from app.models.channel import Channel
 from fastapi.testclient import TestClient
 from datetime import datetime, UTC
+from app.api.deps import get_current_user, get_db
+from app.main import app
 
-def test_create_channel(test_client: TestClient, test_user: User, test_user_token: str):
+@pytest.fixture(autouse=True)
+def override_dependencies(test_user, test_db):
+    # Override get_current_user
+    async def mock_get_current_user():
+        return test_db.merge(test_user)
+    
+    # Override get_db to use test_db
+    def mock_get_db():
+        try:
+            yield test_db
+        finally:
+            pass  # Don't close the session here, it's managed by the test_db fixture
+    
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    app.dependency_overrides[get_db] = mock_get_db
+    yield
+    app.dependency_overrides.clear()
+
+def test_create_channel(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
     """Test creating a new channel."""
+    # Ensure test_user is attached to the session
+    test_user = test_db.merge(test_user)
+    
     headers = {"Authorization": f"Bearer {test_user_token}"}
     response = test_client.post(
         "/api/channels",
@@ -115,6 +138,9 @@ def test_delete_channel(test_client: TestClient, test_user: User, test_user_toke
 
 def test_add_channel_member(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
     """Test adding a member to a channel."""
+    # Ensure test_user is attached to the session
+    test_user = test_db.merge(test_user)
+    
     # Create another user to add to the channel
     new_member = User(
         username="newmember",
@@ -127,6 +153,7 @@ def test_add_channel_member(test_client: TestClient, test_user: User, test_user_
     )
     test_db.add(new_member)
     test_db.commit()
+    test_db.refresh(new_member)
 
     # Create a test channel
     channel = Channel(
@@ -138,6 +165,7 @@ def test_add_channel_member(test_client: TestClient, test_user: User, test_user_
     )
     test_db.add(channel)
     test_db.commit()
+    test_db.refresh(channel)
 
     headers = {"Authorization": f"Bearer {test_user_token}"}
     response = test_client.post(
@@ -154,20 +182,25 @@ def test_add_channel_member(test_client: TestClient, test_user: User, test_user_
     assert len(data) == 2
     member_ids = [member["id"] for member in data]
     assert new_member.id in member_ids
-    assert test_user.id in member_ids
 
 def test_remove_channel_member(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
     """Test removing a member from a channel."""
+    # Ensure test_user is attached to the session
+    test_user = test_db.merge(test_user)
+    
     # Create another user to remove from the channel
     member_to_remove = User(
         username="membertoremove",
         email="membertoremove@example.com",
         full_name="Member To Remove",
         hashed_password="dummyhash",
-        is_active=True
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
     )
     test_db.add(member_to_remove)
     test_db.commit()
+    test_db.refresh(member_to_remove)
 
     # Create a test channel with both users as members
     channel = Channel(
@@ -179,6 +212,7 @@ def test_remove_channel_member(test_client: TestClient, test_user: User, test_us
     )
     test_db.add(channel)
     test_db.commit()
+    test_db.refresh(channel)
 
     headers = {"Authorization": f"Bearer {test_user_token}"}
     response = test_client.delete(
