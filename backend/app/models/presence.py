@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from ..database import Base
-import datetime
+from datetime import datetime, UTC
 
 class Presence(Base):
     __tablename__ = "presence"
@@ -9,7 +9,7 @@ class Presence(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
     status = Column(String)  # online, offline, away, busy
-    last_seen = Column(DateTime, default=datetime.datetime.utcnow)
+    last_seen = Column(DateTime, default=lambda: datetime.now(UTC))
     
     # Relationships
-    user = relationship("User", backref="presence_status", uselist=False) 
+    user = relationship("User", back_populates="presence_status", uselist=False) 

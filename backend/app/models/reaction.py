@@ -11,7 +11,8 @@ class Reaction(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"))
     message_id = Column(Integer, ForeignKey("messages.id"))
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     # Relationships
-    user = relationship("User", backref="reactions")
+    user = relationship("User", back_populates="reactions")
     message = relationship("Message", back_populates="reactions") 

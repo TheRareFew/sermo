@@ -3,8 +3,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List
 import logging
+from datetime import datetime, UTC
 
 from ...schemas.channel import Channel, ChannelCreate, ChannelUpdate, ChannelMember
+from ...schemas.user import User as UserSchema
 from ...models.channel import Channel as ChannelModel
 from ...models.user import User
 from ..deps import get_db, get_current_user
@@ -36,42 +38,52 @@ async def get_channels(
             detail="Could not fetch channels"
         )
 
-@router.post("/", response_model=Channel)
+@router.post("/", response_model=Channel, status_code=status.HTTP_201_CREATED)
 async def create_channel(
     channel: ChannelCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Create a new channel"""
+    """Create a new channel."""
     try:
-        # Verify all members exist
-        members = db.query(User).filter(User.id.in_(channel.member_ids)).all()
-        if len(members) != len(channel.member_ids):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="One or more member IDs are invalid"
-            )
-
-        # Create channel
-        db_channel = ChannelModel(
+        # Merge the current_user object into the current session
+        current_user = db.merge(current_user)
+        
+        # Verify all member IDs exist before creating the channel
+        if channel.member_ids:
+            members = db.query(User).filter(User.id.in_(channel.member_ids)).all()
+            if len(members) != len(channel.member_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="One or more member IDs not found"
+                )
+        
+        new_channel = ChannelModel(
             name=channel.name,
             description=channel.description,
             is_direct_message=channel.is_direct_message,
-            created_by_id=current_user.id
+            created_by_id=current_user.id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC)
         )
-        db_channel.members = members + [current_user]  # Add creator to members
-        
-        db.add(db_channel)
-        db.commit()
-        db.refresh(db_channel)
-        return db_channel
+        db.add(new_channel)
+        db.flush()  # Flush to get the channel ID
 
+        # Add the creator as a member
+        new_channel.members.append(current_user)
+
+        # Add additional members if specified
+        if channel.member_ids:
+            new_channel.members.extend(members)
+
+        db.commit()
+        return new_channel
     except SQLAlchemyError as e:
-        logger.error(f"Database error while creating channel: {e}")
         db.rollback()
+        logger.error(f"Database error while creating channel: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not create channel"
+            detail="Error creating channel"
         )
 
 @router.get("/{channel_id}", response_model=Channel)
@@ -203,6 +215,8 @@ async def add_channel_member(
     try:
         db_channel.members.append(new_member)
         db.commit()
+        db.refresh(db_channel)
+        return None
     except SQLAlchemyError as e:
         logger.error(f"Database error while adding member: {e}")
         db.rollback()
@@ -251,7 +265,7 @@ async def remove_channel_member(
             detail="Could not remove member from channel"
         )
 
-@router.get("/{channel_id}/members", response_model=List[int])
+@router.get("/{channel_id}/members", response_model=List[UserSchema])
 async def get_channel_members(
     channel_id: int,
     db: Session = Depends(get_db),
@@ -272,4 +286,4 @@ async def get_channel_members(
             detail="Not a member of this channel"
         )
     
-    return [member.id for member in db_channel.members] 
+    return db_channel.members 

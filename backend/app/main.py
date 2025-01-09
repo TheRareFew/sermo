@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.v1 import users, channels, messages, files, reactions, search, websockets
-from .auth import router as auth_router
+from .auth.router import router as auth_router
 
 app = FastAPI(title="Chat API", version="1.0.0")
 

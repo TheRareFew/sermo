@@ -1,7 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Table, ForeignKey
 from sqlalchemy.orm import relationship
 from ..database import Base
-import datetime
+from datetime import datetime, UTC
 
 class User(Base):
     __tablename__ = "users"
@@ -11,13 +11,18 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     full_name = Column(String)
     hashed_password = Column(String)
-    profile_picture_url = Column(String, nullable=True)
-    status = Column(String, default="offline")  # online, offline, away, busy
-    last_seen = Column(DateTime, default=datetime.datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
     is_active = Column(Boolean, default=True)
+    profile_picture_url = Column(String, nullable=True)
+    status = Column(String, default="offline")
+    last_seen = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     # Relationships
+    channels = relationship("Channel", secondary="channel_members", back_populates="members")
+    created_channels = relationship("Channel", back_populates="created_by", foreign_keys="Channel.created_by_id")
     messages = relationship("Message", back_populates="sender")
-    channels_created = relationship("Channel", back_populates="created_by", foreign_keys="Channel.created_by_id")
-    channels = relationship("Channel", secondary="channel_members", back_populates="members") 
+    files = relationship("File", back_populates="uploaded_by")
+    reactions = relationship("Reaction", back_populates="user")
+    presence = relationship("Presence", back_populates="user", uselist=False, overlaps="presence_status")
+    presence_status = relationship("Presence", back_populates="user", uselist=False, overlaps="presence") 

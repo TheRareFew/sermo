@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
@@ -20,13 +20,13 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def create_refresh_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) 
 
@@ -45,7 +45,7 @@ class RefreshToken(Base):
     revoked = Column(Boolean, default=False)
 
 async def store_refresh_token(user_id: int, token: str, db: Session):
-    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expires_at = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     db_token = RefreshToken(user_id=user_id, token=token, expires_at=expires_at)
     db.add(db_token)
     db.commit()
@@ -54,7 +54,7 @@ async def verify_refresh_token(user_id: int, token: str, db: Session) -> bool:
     db_token = db.query(RefreshToken).filter(
         RefreshToken.user_id == user_id,
         RefreshToken.token == token,
-        RefreshToken.expires_at > datetime.utcnow(),
+        RefreshToken.expires_at > datetime.now(UTC),
         RefreshToken.revoked == False
     ).first()
     return bool(db_token)

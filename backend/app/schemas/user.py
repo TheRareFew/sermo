@@ -6,13 +6,16 @@ class UserBase(BaseModel):
     username: str
     email: EmailStr
     full_name: str
+    is_active: bool = True
 
 class UserCreate(UserBase):
     password: str
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
+    username: Optional[str] = None
     email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    password: Optional[str] = None
 
 class UserStatus(BaseModel):
     status: str  # online, offline, away, busy
@@ -23,10 +26,10 @@ class UserProfilePicture(BaseModel):
 class User(UserBase):
     id: int
     profile_picture_url: Optional[str] = None
-    status: str
-    last_seen: datetime
+    status: str = "offline"
+    last_seen: Optional[datetime] = None
     created_at: datetime
-    is_active: bool
+    updated_at: datetime
 
     class Config:
         from_attributes = True

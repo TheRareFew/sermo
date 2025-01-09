@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table, Boolean
 from sqlalchemy.orm import relationship
 from ..database import Base
-import datetime
+from datetime import datetime, UTC
 
 # Association table for channel members
 channel_members = Table(
@@ -18,7 +18,8 @@ class Channel(Base):
     name = Column(String, index=True)
     description = Column(String, nullable=True)
     is_direct_message = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     created_by_id = Column(Integer, ForeignKey("users.id"))
 
     # Relationships
