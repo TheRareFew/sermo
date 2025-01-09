@@ -19,10 +19,9 @@ class User(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     # Relationships
-    channels = relationship("Channel", secondary="channel_members", back_populates="members")
-    created_channels = relationship("Channel", back_populates="created_by", foreign_keys="Channel.created_by_id")
     messages = relationship("Message", back_populates="sender")
+    channels = relationship("Channel", secondary="channel_members", back_populates="members")
+    created_channels = relationship("Channel", back_populates="created_by")
     files = relationship("File", back_populates="uploaded_by")
     reactions = relationship("Reaction", back_populates="user")
-    presence = relationship("Presence", back_populates="user", uselist=False, overlaps="presence_status")
-    presence_status = relationship("Presence", back_populates="user", uselist=False, overlaps="presence") 
+    presence = relationship("Presence", back_populates="user", uselist=False) 

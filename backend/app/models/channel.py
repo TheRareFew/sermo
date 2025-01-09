@@ -22,7 +22,7 @@ class Channel(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     created_by_id = Column(Integer, ForeignKey("users.id"))
 
-    # Relationships
+    # Set up relationships
     messages = relationship("Message", back_populates="channel")
-    members = relationship("User", secondary=channel_members)
-    created_by = relationship("User", foreign_keys=[created_by_id]) 
+    members = relationship("User", secondary=channel_members, back_populates="channels")
+    created_by = relationship("User", foreign_keys=[created_by_id], back_populates="created_channels") 

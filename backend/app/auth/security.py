@@ -10,8 +10,9 @@ import uuid
 from sqlalchemy import Table, Column, String, Integer, DateTime, ForeignKey, Boolean
 from ..database import Base
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# Use bcrypt without version check
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 SECRET_KEY = "your-secret-key"  # Store in environment variables
 ALGORITHM = "HS256"
@@ -28,7 +29,7 @@ def create_refresh_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) 
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 async def authenticate_user(username: str, password: str, db: Session) -> Optional[User]:
     user = db.query(User).filter(User.username == username).first()
@@ -64,7 +65,7 @@ async def rotate_refresh_token(user_id: int, old_token: str, new_token: str, db:
     if db_token:
         db_token.revoked = True
     await store_refresh_token(user_id, new_token, db)
-    db.commit() 
+    db.commit()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
@@ -72,4 +73,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Generate a password hash."""
-    return pwd_context.hash(password) 
+    return pwd_context.hash(password)
+
+def decode_token(token: str) -> dict:
+    """Decode and verify a JWT token."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        ) 

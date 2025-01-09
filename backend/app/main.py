@@ -2,8 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.v1 import users, channels, messages, files, reactions, search, websockets
 from .auth.router import router as auth_router
+from .database import init_db
 
 app = FastAPI(title="Chat API", version="1.0.0")
+
+# Initialize database tables
+init_db()
 
 # Configure CORS
 app.add_middleware(

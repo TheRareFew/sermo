@@ -3,6 +3,7 @@
 This document provides a comprehensive overview of all available API endpoints in the backend service.
 
 ## Table of Contents
+- [Running Locally](#running-locally)
 - [Authentication](#authentication)
 - [Users](#users)
 - [Channels](#channels)
@@ -11,6 +12,53 @@ This document provides a comprehensive overview of all available API endpoints i
 - [Reactions](#reactions)
 - [Search](#search)
 - [WebSocket Connections](#websocket-connections)
+
+## Running Locally
+
+To run the backend server locally:
+
+1. Make sure you're in the backend directory:
+```bash
+cd backend
+```
+
+2. Set up Python virtual environment (first time only):
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+.\venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+```
+
+3. Install dependencies (first time only):
+```bash
+pip install -r requirements.txt
+```
+
+4. Start the server with uvicorn:
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+The server will be available at `http://localhost:8000`
+
+Key uvicorn options:
+- `--reload`: Enable auto-reload on code changes (development only)
+- `--host 0.0.0.0`: Make server accessible from other devices on the network
+- `--port 8000`: Set the port number (can be changed if needed)
+
+Interactive API documentation will be available at:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+To deactivate the virtual environment when you're done:
+```bash
+deactivate
+```
 
 ## Base URL
 All HTTP endpoints are prefixed with `/api/v1/`

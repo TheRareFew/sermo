@@ -12,4 +12,4 @@ class Presence(Base):
     last_seen = Column(DateTime, default=lambda: datetime.now(UTC))
     
     # Relationships
-    user = relationship("User", back_populates="presence_status", uselist=False) 
+    user = relationship("User", back_populates="presence", uselist=False) 

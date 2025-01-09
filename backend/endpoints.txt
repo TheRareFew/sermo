@@ -1,0 +1,55 @@
+# Authentication
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+POST /api/auth/refresh-token
+
+# User Management
+GET /api/users/me
+PUT /api/users/me
+GET /api/users/{user_id}
+GET /api/users
+PUT /api/users/me/profile-picture
+
+# Presence & Status
+PUT /api/users/me/status
+GET /api/users/presence
+WebSocket /ws/presence
+
+# Channels
+GET /api/channels
+POST /api/channels
+GET /api/channels/{channel_id}
+PUT /api/channels/{channel_id}
+DELETE /api/channels/{channel_id}
+POST /api/channels/{channel_id}/members
+DELETE /api/channels/{channel_id}/members/{user_id}
+GET /api/channels/{channel_id}/members
+
+# Messages
+GET /api/channels/{channel_id}/messages
+POST /api/channels/{channel_id}/messages
+PUT /api/messages/{message_id}
+DELETE /api/messages/{message_id}
+WebSocket /ws/chat
+
+# Threads/Replies
+GET /api/messages/{message_id}/replies
+POST /api/messages/{message_id}/replies
+GET /api/messages/{message_id}/thread
+
+# Files
+POST /api/files/upload
+GET /api/files/{file_id}
+DELETE /api/files/{file_id}
+GET /api/channels/{channel_id}/files
+
+# Reactions
+POST /api/messages/{message_id}/reactions
+DELETE /api/messages/{message_id}/reactions/{reaction_id}
+GET /api/messages/{message_id}/reactions
+
+# Search
+GET /api/search/messages
+GET /api/search/files
+GET /api/search/channels
