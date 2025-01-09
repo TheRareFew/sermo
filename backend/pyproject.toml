@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sermo-app"
+version = "0.1.0"
+description = "Sermo Chat Application Backend"
+requires-python = ">=3.9"
+authors = [
+    { name = "Sermo Team" }
+]
+dependencies = []  # Dependencies are managed in requirements.txt
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-v"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.hatch.build]
+artifacts = [
+    "app/**/*.py",
+    "app/**/*.pyi",
+]
+exclude = [
+    "tests/*",
+    "uploads/*",
+    ".env",
+    ".env.example",
+    "*.pyc",
+    "__pycache__",
+] 

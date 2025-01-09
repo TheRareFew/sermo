@@ -92,8 +92,9 @@ async def upload_file(
             filename=filename,
             file_type=file.content_type,
             file_size=file_size,
-            file_url=f"/uploads/{filename}",
-            message_id=message_id
+            file_path=f"/uploads/{filename}",
+            message_id=message_id,
+            uploaded_by_id=current_user.id
         )
         
         db.add(db_file)
@@ -101,6 +102,9 @@ async def upload_file(
         db.refresh(db_file)
         return db_file
 
+    except HTTPException as e:
+        logger.error(f"Error uploading file: {e.status_code}: {e.detail}")
+        raise e
     except SQLAlchemyError as e:
         logger.error(f"Database error while uploading file: {e}")
         db.rollback()
@@ -164,18 +168,20 @@ async def delete_file(
                 detail="File not found"
             )
 
-        # Check if user has permission (message sender or channel admin)
+        # Check if user has permission (file uploader, message sender, or channel admin)
         message = db.query(Message).filter(Message.id == file.message_id).first()
         channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
         
-        if message.sender_id != current_user.id and channel.created_by_id != current_user.id:
+        if (file.uploaded_by_id != current_user.id and 
+            message.sender_id != current_user.id and 
+            channel.created_by_id != current_user.id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to delete this file"
             )
 
         # Delete physical file
-        file_path = os.path.join(UPLOAD_DIR, os.path.basename(file.file_url))
+        file_path = os.path.join(UPLOAD_DIR, os.path.basename(file.file_path))
         if os.path.exists(file_path):
             os.remove(file_path)
 
@@ -183,6 +189,8 @@ async def delete_file(
         db.delete(file)
         db.commit()
 
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         logger.error(f"Database error while deleting file: {e}")
         db.rollback()
@@ -226,7 +234,7 @@ async def get_channel_files(
             db.query(FileModel)
             .join(Message, Message.id == FileModel.message_id)
             .filter(Message.channel_id == channel_id)
-            .order_by(FileModel.uploaded_at.desc())
+            .order_by(FileModel.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()

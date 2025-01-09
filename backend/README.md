@@ -434,3 +434,34 @@ python -m app.scripts.generate_test_data
 - User statuses randomly set to online/offline/away/busy
 
 The generated data maintains referential integrity and follows all model constraints. 
+
+# Project Structure
+
+The backend is organized as follows:
+
+```
+backend/
+├── app/              # Main application package
+│   ├── auth/         # Authentication related modules
+│   ├── chat/         # Chat functionality
+│   └── core/         # Core functionality and utilities
+├── tests/            # Test suite
+├── alembic/          # Database migrations
+├── uploads/          # File uploads directory
+└── requirements.txt  # Project dependencies
+```
+
+## Testing
+
+Tests are located in the `tests/` directory. To run the tests:
+
+```powershell
+# From the backend directory
+pytest
+
+# To run with coverage report
+pytest --cov=app tests/
+
+# To run specific test file
+pytest tests/test_specific_file.py
+``` 

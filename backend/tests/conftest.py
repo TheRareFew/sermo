@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import StaticPool
 from datetime import datetime, UTC
 import asyncio
+from pathlib import Path
 
 from app.database import Base
 from app.main import app
@@ -85,3 +86,13 @@ def test_user(test_db):
 def test_user_token(test_user):
     """Create a test user token."""
     return create_access_token({"sub": str(test_user.id)}) 
+
+@pytest.fixture
+def test_upload_file():
+    """Create a test file for upload testing."""
+    file_path = Path("test_upload.txt")
+    with open(file_path, "w") as f:
+        f.write("Test file content")
+    yield file_path
+    if file_path.exists():
+        file_path.unlink() 

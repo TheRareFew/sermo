@@ -6,15 +6,16 @@ class FileBase(BaseModel):
     filename: str
     file_type: str
     file_size: int
-    file_url: str
+    file_path: str
 
 class FileCreate(FileBase):
     message_id: int
 
 class File(FileBase):
     id: int
-    uploaded_at: datetime
+    created_at: datetime
+    updated_at: datetime
     message_id: int
+    uploaded_by_id: int
 
-    class Config:
-        from_attributes = True 
+    model_config = {"from_attributes": True} 
