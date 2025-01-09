@@ -7,7 +7,7 @@ interface WebSocketMessage {
   [key: string]: any;
 }
 
-class WebSocketService {
+export class WebSocketService {
   private chatSocket: WebSocket | null = null;
   private presenceSocket: WebSocket | null = null;
   private messageHandlers: ((message: WebSocketMessage) => void)[] = [];
@@ -173,5 +173,4 @@ class WebSocketService {
 
 // Create a singleton instance
 const wsService = new WebSocketService();
-
 export default wsService; 

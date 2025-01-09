@@ -57,4 +57,18 @@ export interface ChatState {
   users: { [userId: number]: User };
   loading: boolean;
   error: string | null;
+}
+
+// WebSocket types
+export interface WebSocketMessage {
+  type: string;
+  id?: number;
+  content?: string;
+  sender_id?: number;
+  channel_id?: number;
+  created_at?: string;
+  is_system?: boolean;
+  user_id?: number;
+  status?: 'online' | 'offline' | 'away' | 'busy';
+  [key: string]: any;
 } 

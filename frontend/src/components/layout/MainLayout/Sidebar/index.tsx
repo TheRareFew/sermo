@@ -1,10 +1,10 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import styled from 'styled-components';
-import { RootState } from '../../../store/rootReducer';
-import { setActiveChannel } from '../../../store/chat/chatSlice';
-import Button from '../../common/Button';
-import { Channel, User } from '../../../types';
+import { setActiveChannel } from '../../../../store/chat/chatSlice';
+import Button from '../../../common/Button';
+import { Channel, User } from '../../../../types';
+import { RootState } from '../../../../store/rootReducer';
 
 const SidebarContainer = styled.div`
   width: 240px;
@@ -104,8 +104,8 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ onCreateChannel }) => {
   const dispatch = useDispatch();
-  const channels = useSelector((state: RootState) => state.chat.channels) as Channel[];
-  const users = useSelector((state: RootState) => state.chat.users) as Record<number, User>;
+  const channels = useSelector((state: RootState) => state.chat.channels);
+  const users = useSelector((state: RootState) => state.chat.users);
   const activeChannelId = useSelector((state: RootState) => state.chat.activeChannelId);
 
   const handleChannelClick = (channelId: number) => {

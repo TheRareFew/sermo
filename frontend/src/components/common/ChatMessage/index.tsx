@@ -11,8 +11,14 @@ interface ChatMessageProps {
 const MessageContainer = styled.div<{ isSystem: boolean }>`
   font-family: 'Courier New', monospace;
   margin: 2px 0;
+  padding: 4px 8px;
   color: ${props => props.isSystem ? props.theme.colors.secondary : props.theme.colors.text};
   word-wrap: break-word;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: ${props => props.theme.colors.hover};
+  }
 `;
 
 const Timestamp = styled.span`
@@ -21,6 +27,7 @@ const Timestamp = styled.span`
 
 const Sender = styled.span`
   color: ${props => props.theme.colors.primary};
+  font-weight: bold;
 `;
 
 const formatTime = (timestamp: string): string => {
