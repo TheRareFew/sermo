@@ -20,6 +20,13 @@ const MessageListContainer = styled.div`
   font-family: 'Courier New', monospace;
 `;
 
+const MessagesWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+  min-height: min-content;
+`;
+
 const LoadingMessage = styled.div`
   text-align: center;
   padding: 8px;
@@ -96,7 +103,8 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
       channelId,
       messageCount: channelMessages.length,
       messages: channelMessages,
-      messagesByChannel: state.messages.messagesByChannel
+      messagesByChannel: state.messages.messagesByChannel,
+      stateMessages: state.messages
     });
     return channelMessages;
   });
@@ -154,6 +162,7 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
     const div = e.currentTarget;
     const isNearTop = div.scrollTop <= 100;
+    const previousScrollHeight = div.scrollHeight;
     
     if (isNearTop && !isLoadingMore && hasMoreMessages && channelId) {
       setIsLoadingMore(true);
@@ -178,6 +187,14 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
             channelId: String(channelId), 
             messages: allMessages
           }));
+          
+          // Maintain scroll position after loading older messages
+          requestAnimationFrame(() => {
+            if (containerRef.current) {
+              const newScrollHeight = containerRef.current.scrollHeight;
+              containerRef.current.scrollTop = newScrollHeight - previousScrollHeight;
+            }
+          });
         }
       } catch (error) {
         console.error('Failed to fetch older messages:', error);
@@ -191,7 +208,11 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (containerRef.current && messages.length > 0 && shouldScrollToBottom) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      const container = containerRef.current;
+      // Use requestAnimationFrame to ensure the scroll happens after the render
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
     }
   }, [messages, shouldScrollToBottom]);
 
@@ -215,49 +236,43 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
       ref={containerRef}
       onScroll={handleScroll}
     >
-      {error && (
-        <ErrorMessage>
-          {error}
-        </ErrorMessage>
-      )}
-      
-      {isLoadingMore && (
-        <LoadingMessage>Loading older messages...</LoadingMessage>
-      )}
-      
-      {!hasMoreMessages && messages.length > 0 && (
-        <LoadingMessage>
-          You've reached the beginning of this conversation
-        </LoadingMessage>
-      )}
+      <MessagesWrapper>
+        {error && (
+          <ErrorMessage>
+            {error}
+          </ErrorMessage>
+        )}
+        
+        {!hasMoreMessages && messages.length > 0 && (
+          <LoadingMessage>
+            You've reached the beginning of this conversation
+          </LoadingMessage>
+        )}
+        
+        {isLoadingMore && (
+          <LoadingMessage>Loading older messages...</LoadingMessage>
+        )}
 
-      {messages.map((msg: StoreMessage) => {
-        const sender = users[Number(msg.userId)]?.username || 'Unknown';
-        console.log('Rendering message:', {
-          messageId: msg.id,
-          content: msg.content,
-          userId: msg.userId,
-          sender,
-          timestamp: msg.createdAt,
-          hasUser: !!users[Number(msg.userId)]
-        });
-        return (
-          <div key={msg.id} id={`message-${msg.id}`} style={{ margin: '4px 0' }}>
-            <ChatMessage
-              content={msg.content}
-              sender={sender}
-              timestamp={msg.createdAt}
-              isSystem={false}
-            />
-          </div>
-        );
-      })}
-      
-      {!isLoading && messages.length === 0 && (
-        <NoMessagesMessage>
-          No messages yet. Start the conversation!
-        </NoMessagesMessage>
-      )}
+        {messages.length === 0 && !isLoading && !error && (
+          <NoMessagesMessage>
+            No messages yet. Start the conversation!
+          </NoMessagesMessage>
+        )}
+
+        {messages.map((msg: StoreMessage) => {
+          const sender = users[Number(msg.userId)]?.username || 'Unknown';
+          return (
+            <div key={msg.id} id={`message-${msg.id}`} style={{ margin: '4px 0' }}>
+              <ChatMessage
+                content={msg.content}
+                sender={sender}
+                timestamp={msg.createdAt}
+                isSystem={false}
+              />
+            </div>
+          );
+        })}
+      </MessagesWrapper>
     </MessageListContainer>
   );
 };

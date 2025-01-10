@@ -144,9 +144,23 @@ const MainLayout: React.FC = () => {
     };
 
     fetchInitialData();
+    
+    // Connect to WebSocket
+    console.log('Connecting to WebSocket...');
     wsService.connect();
 
+    // Check WebSocket connection status
+    const checkConnection = setInterval(() => {
+      const wsState = wsService.getChatSocketState();
+      console.log('WebSocket state:', wsState);
+      if (wsState !== WebSocket.OPEN) {
+        console.log('Reconnecting WebSocket...');
+        wsService.connect();
+      }
+    }, 5000);
+
     return () => {
+      clearInterval(checkConnection);
       wsService.disconnect();
     };
   }, [dispatch]);
@@ -156,9 +170,12 @@ const MainLayout: React.FC = () => {
     const handleMessage = (message: WebSocketMessage) => {
       console.log('Received WebSocket message:', message);
       
-      if (message.type === 'message' && message.message) {
+      // Handle both new message and message_sent events
+      if ((message.type === 'message' || message.type === 'message_sent') && message.message) {
         try {
           const { id, content, channel_id, sender_id, created_at } = message.message;
+          console.log('Processing message:', { id, content, channel_id, sender_id, created_at });
+          
           if (!id || !content || !channel_id || !sender_id) {
             console.error('Invalid message format:', message);
             return;
@@ -180,6 +197,11 @@ const MainLayout: React.FC = () => {
         } catch (error) {
           console.error('Error handling WebSocket message:', error);
         }
+      } else if (message.type === 'presence_update' && message.user_id && message.status) {
+        dispatch(updateUserStatus({
+          userId: message.user_id,
+          status: message.status
+        }));
       }
     };
 

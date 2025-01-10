@@ -20,14 +20,19 @@ const messagesSlice = createSlice({
     fetchMessagesSuccess: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[] }>) => {
       console.log('Message fetch success:', action.payload);
       // Sort messages by createdAt in ascending order (oldest first)
-      const sortedMessages = action.payload.messages.sort((a, b) => 
+      const sortedMessages = [...action.payload.messages].sort((a, b) => 
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
       state.messagesByChannel[action.payload.channelId] = sortedMessages;
       state.loading = false;
       state.error = null;
-      console.log('Updated message state:', state.messagesByChannel);
+      console.log('Updated message state:', {
+        channelId: action.payload.channelId,
+        messageCount: sortedMessages.length,
+        messages: sortedMessages,
+        state: state
+      });
     },
     fetchMessagesFailure: (state, action: PayloadAction<string>) => {
       console.log('Message fetch failed:', action.payload);
@@ -35,25 +40,40 @@ const messagesSlice = createSlice({
       state.error = action.payload;
     },
     addMessage: (state, action: PayloadAction<StoreMessage>) => {
-      console.log('Adding message:', action.payload);
+      console.log('Adding message to store:', action.payload);
       const { channelId } = action.payload;
+      
+      // Initialize the channel's message array if it doesn't exist
       if (!state.messagesByChannel[channelId]) {
         state.messagesByChannel[channelId] = [];
       }
+
       // Check if message already exists
       const existingMessageIndex = state.messagesByChannel[channelId].findIndex(
         msg => msg.id === action.payload.id
       );
+
       if (existingMessageIndex === -1) {
         // Add new message at the end (it's the newest)
         state.messagesByChannel[channelId].push(action.payload);
-        // Sort messages by createdAt
-        state.messagesByChannel[channelId].sort((a, b) => 
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        );
-        console.log('Updated message state after add:', state.messagesByChannel);
+        // No need to sort since we're maintaining chronological order and new messages
+        // are always newer than existing ones
+        console.log('Updated message state after add:', {
+          channelId,
+          messageCount: state.messagesByChannel[channelId].length,
+          messages: state.messagesByChannel[channelId],
+          state: state
+        });
       } else {
-        console.log('Message already exists:', action.payload);
+        // Update existing message
+        state.messagesByChannel[channelId][existingMessageIndex] = action.payload;
+        console.log('Updated existing message:', {
+          messageId: action.payload.id,
+          channelId,
+          messageCount: state.messagesByChannel[channelId].length,
+          messages: state.messagesByChannel[channelId],
+          state: state
+        });
       }
     },
     updateMessage: (state, action: PayloadAction<StoreMessage>) => {

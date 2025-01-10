@@ -43,18 +43,28 @@ export class WebSocketService {
 
     // Connect to chat WebSocket
     try {
+      if (this.chatSocket?.readyState === WebSocket.OPEN) {
+        console.log('Chat WebSocket already connected');
+        return;
+      }
+
+      console.log('Connecting to chat WebSocket...');
       this.chatSocket = new WebSocket(`${WS_URL}/chat?token=${encodeURIComponent(token)}`);
       this.setupWebSocketHandlers(this.chatSocket, 'chat');
-      console.log('Connecting to chat WebSocket...');
     } catch (error) {
       console.error('Failed to connect to chat WebSocket:', error);
     }
 
     // Connect to presence WebSocket
     try {
+      if (this.presenceSocket?.readyState === WebSocket.OPEN) {
+        console.log('Presence WebSocket already connected');
+        return;
+      }
+
+      console.log('Connecting to presence WebSocket...');
       this.presenceSocket = new WebSocket(`${WS_URL}/presence?token=${encodeURIComponent(token)}`);
       this.setupWebSocketHandlers(this.presenceSocket, 'presence');
-      console.log('Connecting to presence WebSocket...');
     } catch (error) {
       console.error('Failed to connect to presence WebSocket:', error);
     }
@@ -68,13 +78,26 @@ export class WebSocketService {
     socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+        console.log(`Received ${type} message:`, message);
         if (type === 'chat') {
-          this.messageHandlers.forEach(handler => handler(message));
+          this.messageHandlers.forEach(handler => {
+            try {
+              handler(message);
+            } catch (error) {
+              console.error('Error in message handler:', error);
+            }
+          });
         } else {
-          this.presenceHandlers.forEach(handler => handler(message));
+          this.presenceHandlers.forEach(handler => {
+            try {
+              handler(message);
+            } catch (error) {
+              console.error('Error in presence handler:', error);
+            }
+          });
         }
       } catch (error) {
-        console.error(`Failed to parse ${type} message:`, error);
+        console.error(`Failed to parse ${type} message:`, error, event.data);
       }
     };
 
@@ -90,6 +113,7 @@ export class WebSocketService {
 
     socket.onerror = (error) => {
       console.error(`${type} WebSocket error:`, error);
+      this.scheduleReconnect();
     };
   }
 
@@ -110,7 +134,7 @@ export class WebSocketService {
 
   public sendMessage(channelId: number, content: string): void {
     if (!this.chatSocket || this.chatSocket.readyState !== WebSocket.OPEN) {
-      console.error('Chat WebSocket is not connected');
+      console.error('Chat WebSocket is not connected. State:', this.chatSocket?.readyState);
       return;
     }
 
@@ -126,10 +150,12 @@ export class WebSocketService {
     };
 
     try {
-      console.log('Sending message:', message);
+      console.log('Sending WebSocket message:', message);
       this.chatSocket.send(JSON.stringify(message));
     } catch (error) {
       console.error('Failed to send message:', error);
+      // Try to reconnect
+      this.connect();
     }
   }
 

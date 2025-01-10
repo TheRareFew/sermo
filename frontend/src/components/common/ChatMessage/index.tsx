@@ -31,11 +31,28 @@ const Sender = styled.span`
 `;
 
 const formatTime = (timestamp: string): string => {
-  const date = new Date(timestamp);
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const seconds = date.getSeconds().toString().padStart(2, '0');
-  return `${hours}:${minutes}:${seconds}`;
+  try {
+    console.log('Formatting timestamp:', timestamp);
+    
+    // Parse the timestamp, assuming UTC if no timezone is specified
+    const date = new Date(timestamp.endsWith('Z') ? timestamp : timestamp + 'Z');
+    if (isNaN(date.getTime())) {
+      console.error('Invalid timestamp:', timestamp);
+      return '--:--:--';
+    }
+    
+    // Convert to local time
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    
+    const formattedTime = `${hours}:${minutes}:${seconds}`;
+    console.log('Formatted time:', formattedTime);
+    return formattedTime;
+  } catch (error) {
+    console.error('Error formatting timestamp:', error);
+    return '--:--:--';
+  }
 };
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ content, sender, timestamp, isSystem = false }) => {
