@@ -3,8 +3,10 @@ import styled from 'styled-components';
 import { useDispatch, useSelector } from 'react-redux';
 import ChatMessage from '../../common/ChatMessage';
 import DeleteMessageModal from '../DeleteMessageModal';
-import { getChannelMessages, deleteMessage as deleteMessageApi } from '../../../services/api/chat';
-import { setMessages, deleteMessage } from '../../../store/messages/messagesSlice';
+import ReplyModal from '../ReplyModal';
+import MessageReplies from '../MessageReplies';
+import { getChannelMessages, deleteMessage as deleteMessageApi, getReplies, createReply } from '../../../services/api/chat';
+import { setMessages, deleteMessage, setReplies, toggleExpanded, addMessage } from '../../../store/messages/messagesSlice';
 import { Message as ApiMessage, StoreMessage, RootState, User } from '../../../types';
 import wsService from '../../../services/websocket';
 import { toast } from 'react-toastify';
@@ -68,15 +70,26 @@ const transformMessage = (msg: ApiMessage): StoreMessage => {
     throw new Error('Invalid message format');
   }
 
+  // Ensure all IDs are strings
+  const senderId = String(msg.sender_id);
+  const channelId = String(msg.channel_id);
+  const messageId = String(msg.id);
+  const parentId = msg.parent_id ? String(msg.parent_id) : undefined;
+
+  console.log('Transformed IDs:', { senderId, channelId, messageId, parentId });
+
   const transformed: StoreMessage = {
-    id: String(msg.id),
+    id: messageId,
     content: msg.content,
-    channelId: String(msg.channel_id),
-    userId: String(msg.sender_id),
+    channelId: channelId,
+    userId: senderId,
+    parentId: parentId,
     reactions: [],
     attachments: [],
     createdAt: msg.created_at,
-    updatedAt: msg.created_at
+    updatedAt: msg.created_at,
+    replyCount: msg.reply_count || 0,
+    isExpanded: false
   };
 
   console.log('Transformed message:', transformed);
@@ -94,6 +107,8 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   const [deletingMessageIds, setDeletingMessageIds] = useState<Set<string>>(new Set());
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<StoreMessage | null>(null);
+  const [isReplyModalOpen, setIsReplyModalOpen] = useState(false);
 
   // Connect to WebSocket when channel changes
   useEffect(() => {
@@ -157,10 +172,6 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
 
   const messages = useSelector((state: RootState) => {
     if (!channelId || !state.messages?.messagesByChannel) {
-      console.log('No messages to display - channelId or messagesByChannel is missing:', {
-        channelId,
-        hasMessagesByChannel: !!state.messages?.messagesByChannel
-      });
       return [];
     }
     const channelMessages = state.messages.messagesByChannel[String(channelId)] || [];
@@ -168,36 +179,113 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
     const sortedMessages = [...channelMessages].sort((a, b) => 
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
-    console.log('Selected messages for channel', channelId, ':', {
-      channelId,
-      messageCount: sortedMessages.length,
-      messages: sortedMessages,
-      messagesByChannel: state.messages.messagesByChannel,
-      stateMessages: state.messages
-    });
     return sortedMessages;
   });
 
-  const users = useSelector((state: RootState) => {
-    const allUsers = state.chat?.users || {} as { [key: number]: User };
-    console.log('Selected users:', {
-      userCount: Object.keys(allUsers).length,
-      users: allUsers
-    });
-    return allUsers;
-  });
+  // Organize messages into threads
+  const messageThreads = messages.reduce<{ message: StoreMessage; replies: StoreMessage[] }[]>((acc, message) => {
+    if (!message.parentId) {
+      // This is a top-level message
+      acc.push({
+        message,
+        replies: messages.filter(m => m.parentId === message.id)
+      });
+    }
+    return acc;
+  }, []);
 
+  const users = useSelector((state: RootState) => state.chat?.users || {});
   const currentUser = useSelector((state: RootState) => state.auth?.user);
+  const isLoading = useSelector((state: RootState) => state.messages?.loading || false);
 
-  const isLoading = useSelector((state: RootState) => {
-    const loading = state.messages?.loading || false;
-    console.log('Loading state:', loading);
-    return loading;
-  });
+  // Ensure currentUserId is a string
+  const currentUserId = currentUser?.id ? String(currentUser.id) : undefined;
 
   const handleDeleteMessage = async (messageId: string) => {
     setMessageToDelete(messageId);
     setIsDeleteModalOpen(true);
+  };
+
+  const handleReplyToMessage = (message: StoreMessage) => {
+    setReplyToMessage(message);
+    setIsReplyModalOpen(true);
+  };
+
+  const handleSubmitReply = async (content: string) => {
+    if (!channelId || !replyToMessage) return;
+
+    try {
+      const reply = await createReply(replyToMessage.id, content);
+      const transformedReply = transformMessage(reply);
+      
+      // Update the parent message's reply count and expand state
+      const updatedParentMessage = {
+        ...replyToMessage,
+        replyCount: (replyToMessage.replyCount || 0) + 1,
+        isExpanded: true // Ensure the thread is expanded
+      };
+      
+      // Add the reply and update the parent message
+      dispatch(addMessage(transformedReply));
+      dispatch(setMessages({
+        channelId,
+        messages: messages.map(msg => 
+          msg.id === replyToMessage.id ? updatedParentMessage : msg
+        )
+      }));
+
+      // Fetch all replies to ensure we have the complete thread
+      const replies = await getReplies(replyToMessage.id);
+      const transformedReplies = replies.map(transformMessage);
+      dispatch(setReplies({ channelId, messageId: replyToMessage.id, replies: transformedReplies }));
+      
+      // Auto-scroll to bottom
+      requestAnimationFrame(() => {
+        if (containerRef.current) {
+          containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        }
+      });
+      
+      toast.success('Reply sent successfully');
+    } catch (error) {
+      console.error('Failed to send reply:', error);
+      toast.error('Failed to send reply. Please try again.');
+    }
+  };
+
+  const handleToggleReplies = async (messageId: string) => {
+    if (!channelId) return;
+
+    const message = messages.find(msg => msg.id === messageId);
+    if (!message) return;
+
+    // Check if we're near the bottom before expanding/collapsing
+    const container = containerRef.current;
+    const isNearBottom = container && 
+      (container.scrollHeight - container.scrollTop - container.clientHeight < 100);
+
+    if (!message.isExpanded) {
+      try {
+        const replies = await getReplies(messageId);
+        const transformedReplies = replies.map(transformMessage);
+        dispatch(setReplies({ channelId, messageId, replies: transformedReplies }));
+      } catch (error) {
+        console.error('Failed to fetch replies:', error);
+        toast.error('Failed to load replies. Please try again.');
+        return;
+      }
+    }
+
+    dispatch(toggleExpanded({ channelId, messageId }));
+
+    // If we were near the bottom before, scroll to bottom after the change
+    if (isNearBottom) {
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      });
+    }
   };
 
   const confirmDelete = async () => {
@@ -341,65 +429,47 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
 
   return (
     <>
-      <MessageListContainer
-        ref={containerRef}
-        onScroll={handleScroll}
-      >
+      <MessageListContainer ref={containerRef} onScroll={handleScroll}>
         <MessagesWrapper>
-          {error && (
-            <ErrorMessage>
-              {error}
-            </ErrorMessage>
-          )}
-          
-          {isConnecting && (
-            <LoadingMessage>
-              Connecting to chat...
-            </LoadingMessage>
-          )}
-          
+          {error && <ErrorMessage>{error}</ErrorMessage>}
+          {isConnecting && <LoadingMessage>Connecting to chat...</LoadingMessage>}
           {!hasMoreMessages && messages.length > 0 && (
-            <LoadingMessage>
-              You've reached the beginning of this conversation
-            </LoadingMessage>
+            <LoadingMessage>You've reached the beginning of this conversation</LoadingMessage>
           )}
-          
-          {isLoadingMore && (
-            <LoadingMessage>Loading older messages...</LoadingMessage>
-          )}
-
+          {isLoadingMore && <LoadingMessage>Loading older messages...</LoadingMessage>}
           {messages.length === 0 && !isLoading && !error && !isConnecting && (
-            <NoMessagesMessage>
-              No messages yet. Start the conversation!
-            </NoMessagesMessage>
+            <NoMessagesMessage>No messages yet. Start the conversation!</NoMessagesMessage>
           )}
 
-          {messages.map((msg: StoreMessage) => {
-            const userId = Number(msg.userId);
-            const user = users[userId];
-            const sender = user?.username || `User ${msg.userId}`;
-            const isDeleting = deletingMessageIds.has(msg.id);
-            
-            return (
-              <div key={msg.id} id={`message-${msg.id}`} style={{ 
-                margin: '4px 0',
-                opacity: isDeleting ? 0.5 : 1,
-                pointerEvents: isDeleting ? 'none' as const : 'auto' as const
-              }}>
-                <ChatMessage
-                  content={msg.content}
-                  sender={sender}
-                  timestamp={msg.createdAt}
-                  isSystem={false}
-                  userId={msg.userId}
-                  currentUserId={currentUser?.id?.toString()}
-                  onDelete={() => handleDeleteMessage(msg.id)}
+          {messageThreads.map(({ message, replies }) => (
+            <React.Fragment key={message.id}>
+              <ChatMessage
+                content={message.content}
+                sender={users[message.userId]?.username || message.userId}
+                timestamp={message.createdAt}
+                userId={message.userId}
+                currentUserId={currentUserId}
+                onDelete={() => handleDeleteMessage(message.id)}
+                replyCount={replies.length}
+                isExpanded={message.isExpanded || false}
+                onToggleReplies={() => handleToggleReplies(message.id)}
+                onReply={() => handleReplyToMessage(message)}
+              />
+              {replies.length > 0 && (
+                <MessageReplies
+                  parentId={message.id}
+                  replies={replies}
+                  isExpanded={message.isExpanded || false}
+                  onToggleReplies={handleToggleReplies}
+                  onDelete={handleDeleteMessage}
+                  currentUserId={currentUserId}
                 />
-              </div>
-            );
-          })}
+              )}
+            </React.Fragment>
+          ))}
         </MessagesWrapper>
       </MessageListContainer>
+
       <DeleteMessageModal
         isOpen={isDeleteModalOpen}
         onClose={() => {
@@ -409,6 +479,17 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
         onConfirm={confirmDelete}
         isDeleting={messageToDelete ? deletingMessageIds.has(messageToDelete) : false}
       />
+      {replyToMessage && (
+        <ReplyModal
+          isOpen={isReplyModalOpen}
+          onClose={() => {
+            setIsReplyModalOpen(false);
+            setReplyToMessage(null);
+          }}
+          onSubmit={handleSubmitReply}
+          parentMessage={replyToMessage}
+        />
+      )}
     </>
   );
 };

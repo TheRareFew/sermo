@@ -166,4 +166,42 @@ export const deleteMessage = async (messageId: string): Promise<void> => {
     console.error(`Error deleting message ${messageId}:`, error);
     throw error;
   }
+};
+
+export const getReplies = async (messageId: string): Promise<Message[]> => {
+  console.log(`Fetching replies for message ${messageId}...`);
+  try {
+    const replies = await apiRequest<Message[]>(`/messages/${messageId}/replies`);
+    console.log('Received replies:', replies);
+
+    // Validate and transform replies
+    const validReplies = replies
+      .filter(msg => msg && msg.id && msg.content && msg.channel_id && msg.sender_id)
+      .map(msg => ({
+        ...msg,
+        created_at: msg.created_at || new Date().toISOString(),
+        is_system: msg.is_system || false
+      }));
+
+    console.log('Validated and transformed replies:', validReplies);
+    return validReplies;
+  } catch (error) {
+    console.error(`Error fetching replies for message ${messageId}:`, error);
+    throw error;
+  }
+};
+
+export const createReply = async (messageId: string, content: string): Promise<Message> => {
+  console.log(`Creating reply to message ${messageId}:`, content);
+  try {
+    const reply = await apiRequest<Message>(`/messages/${messageId}/replies`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+    console.log('Created reply:', reply);
+    return reply;
+  } catch (error) {
+    console.error(`Error creating reply to message ${messageId}:`, error);
+    throw error;
+  }
 }; 

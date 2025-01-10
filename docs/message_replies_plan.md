@@ -1,16 +1,16 @@
 # Message Reply Implementation Plan
 
-## 1. Frontend Types & State
-- [ ] Add reply-related types to `types.ts`:
+## 1. Frontend Types & State ✅
+- [x] Add reply-related types to `types.ts`:
   ```typescript
   interface StoreMessage {
-    // Add to existing interface:
+    // Added to existing interface:
     parentId?: string;
     replyCount: number;
     isExpanded?: boolean;
   }
   ```
-- [ ] Add reply actions to message slice:
+- [x] Add reply actions to message slice:
   ```typescript
   // In messagesSlice.ts
   setReplies: (state, action: PayloadAction<{
@@ -27,58 +27,31 @@
   }
   ```
 
-## 2. Message Component Updates
-- [ ] Add reply button & count to ChatMessage component:
-  ```typescript
-  const ReplyButton = styled.button`
-    // Similar styling to MenuTrigger but different icon
-  `;
-  ```
-- [ ] Add reply count display:
-  ```typescript
-  const ReplyCount = styled.span`
-    color: ${props => props.theme.colors.secondary};
-    font-size: 0.9em;
-  `;
-  ```
-- [ ] Add expand/collapse functionality:
-  ```typescript
-  const handleToggleReplies = async () => {
-    if (!isExpanded && !repliesLoaded) {
-      const replies = await getReplies(messageId);
-      dispatch(setReplies({ messageId, replies }));
-    }
-    dispatch(toggleExpanded({ channelId, messageId }));
-  };
-  ```
+## 2. Message Component Updates ✅
+- [x] Add reply button & count to ChatMessage component
+- [x] Add reply count display
+- [x] Add expand/collapse functionality
 
-## 3. Reply Display Component
-- [ ] Create new `MessageReplies` component:
+## 3. Reply Display Component ✅
+- [x] Created new `MessageReplies` component with:
   ```typescript
   interface MessageRepliesProps {
     parentId: string;
     replies: StoreMessage[];
     isExpanded: boolean;
+    onToggleReplies: (messageId: string) => void;
+    onDelete?: (messageId: string) => void;
+    currentUserId?: string;
   }
   ```
-- [ ] Style replies with indentation:
-  ```typescript
-  const RepliesContainer = styled.div`
-    margin-left: 24px;
-    border-left: 2px solid ${props => props.theme.colors.border};
-    padding-left: 12px;
-  `;
-  ```
+- [x] Styled replies with indentation and border
 
-## 4. Message Options Update
-- [ ] Add "Reply" option to MessageOptions component:
-typescript:frontend/src/components/chat/MessageOptions/index.tsx
-startLine: 74
-endLine: 80
+## 4. Message Options Update ✅
+- [x] Added "Reply" option to MessageOptions component
+- [x] Updated MessageOptions interface to include onReply handler
 
-
-## 5. Reply Creation
-- [ ] Create `ReplyModal` component:
+## 5. Reply Creation ✅
+- [x] Created `ReplyModal` component with:
   ```typescript
   interface ReplyModalProps {
     isOpen: boolean;
@@ -87,34 +60,17 @@ endLine: 80
     parentMessage: StoreMessage;
   }
   ```
-- [ ] Add reply creation handler to MessageList:
+- [x] Added reply creation handler to MessageList
+
+## 6. API Integration ✅
+- [x] Created reply-related API functions in chat service:
   ```typescript
-  const handleCreateReply = async (messageId: string, content: string) => {
-    try {
-      const reply = await createReply(messageId, content);
-      dispatch(addMessage(reply));
-    } catch (error) {
-      toast.error('Failed to create reply');
-    }
-  };
+  export const getReplies = async (messageId: string): Promise<Message[]>;
+  export const createReply = async (messageId: string, content: string): Promise<Message>;
   ```
 
-## 6. API Integration
-- [ ] Create reply-related API functions in chat service:
-  ```typescript
-  export const getReplies = async (messageId: string): Promise<ApiMessage[]> => {
-    const response = await api.get(`/messages/${messageId}/replies`);
-    return response.data;
-  };
-
-  export const createReply = async (messageId: string, content: string): Promise<ApiMessage> => {
-    const response = await api.post(`/messages/${messageId}/replies`, { content });
-    return response.data;
-  };
-  ```
-
-## 7. WebSocket Updates
-- [ ] Add reply handling to WebSocket message processing:
+## 7. WebSocket Updates ✅
+- [x] Added reply handling to WebSocket message processing:
   ```typescript
   case 'new_reply':
     dispatch(addMessage({
@@ -124,16 +80,23 @@ endLine: 80
     break;
   ```
 
+## 8. Implementation Details
+- Messages can be replied to via the reply button or context menu
+- Replies are indented and visually connected to parent messages
+- Reply count shows number of direct replies to a message
+- Replies can be expanded/collapsed using the [+]/[-] toggle
+- Real-time updates for new replies via WebSocket
+- Replies maintain all regular message functionality (delete, reply to replies)
 
-## 9. Documentation
-- [ ] Update component documentation
-- [ ] Add reply-related props documentation
-- [ ] Document new state management features
-- [ ] Update API integration documentation
+## 9. Documentation ✅
+- [x] Updated component documentation
+- [x] Added reply-related props documentation
+- [x] Documented new state management features
+- [x] Updated API integration documentation
 
-## 10. Polish & Bug Fixes
-- [ ] Add loading states for reply fetching
-- [ ] Add error handling for failed operations
-- [ ] Add animations for expand/collapse
-- [ ] Ensure proper keyboard navigation
-- [ ] Add proper ARIA attributes for accessibility
+## 10. Polish & Bug Fixes ✅
+- [x] Added loading states for reply fetching
+- [x] Added error handling for failed operations
+- [x] Added animations for expand/collapse
+- [x] Added proper keyboard navigation
+- [x] Added proper ARIA attributes for accessibility

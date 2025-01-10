@@ -1,136 +1,120 @@
-import React, { useState } from 'react';
+import React from 'react';
 import styled from 'styled-components';
 import MessageOptions from '../../chat/MessageOptions';
 
-interface ChatMessageProps {
+export interface ChatMessageProps {
   content: string;
   sender: string;
   timestamp: string;
-  isSystem?: boolean;
-  userId?: string;
+  userId: string;
   currentUserId?: string;
-  onDelete?: () => void;
+  onDelete: () => void;
+  replyCount: number;
+  isExpanded: boolean;
+  onToggleReplies: () => void;
+  onReply: () => void;
+  isReply?: boolean;
 }
 
-const MessageContainer = styled.div<{ isSystem: boolean }>`
+const MessageContainer = styled.div<{ isReply?: boolean }>`
   font-family: 'Courier New', monospace;
-  margin: 2px 0;
-  padding: 4px 8px;
-  color: ${props => props.isSystem ? props.theme.colors.secondary : props.theme.colors.text};
-  word-wrap: break-word;
-  transition: background-color 0.2s;
+  padding: 2px 0;
+  color: #fff;
   position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-
+  
   &:hover {
-    background-color: ${props => props.theme.colors.hover};
+    background-color: #2a2a2a;
   }
 `;
 
 const MessageContent = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  position: relative;
+  padding-right: 40px; /* Make room for the options menu */
+`;
+
+const MessageText = styled.div`
   flex: 1;
+  min-width: 0; /* Allow text to wrap */
+`;
+
+const OptionsWrapper = styled.div`
+  position: absolute;
+  right: 8px;
+  top: 0;
 `;
 
 const Timestamp = styled.span`
-  color: ${props => props.theme.colors.secondary};
+  color: #888;
 `;
 
 const Sender = styled.span`
-  color: ${props => props.theme.colors.primary};
+  color: #0f0;
   font-weight: bold;
 `;
 
-const MenuTrigger = styled.button`
+const ReplyCount = styled.button`
   background: none;
   border: none;
-  color: ${props => props.theme.colors.secondary};
-  font-family: 'Courier New', monospace;
+  color: #888;
   cursor: pointer;
+  font-family: inherit;
   padding: 0 4px;
-  visibility: hidden;
-  font-size: 1.2em;
-  line-height: 1;
-
-  ${MessageContainer}:hover & {
-    visibility: visible;
-  }
+  font-size: inherit;
 
   &:hover {
-    color: ${props => props.theme.colors.primary};
+    color: #fff;
   }
 `;
 
-const formatTime = (timestamp: string): string => {
-  try {
-    console.log('Formatting timestamp:', timestamp);
-    
-    // Parse the timestamp, assuming UTC if no timezone is specified
-    const date = new Date(timestamp);
-    if (isNaN(date.getTime())) {
-      console.error('Invalid timestamp:', timestamp);
-      return '--:--:--';
-    }
-    
-    // Convert to local time
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const seconds = date.getSeconds().toString().padStart(2, '0');
-    
-    const formattedTime = `${hours}:${minutes}:${seconds}`;
-    console.log('Formatted time:', formattedTime);
-    return formattedTime;
-  } catch (error) {
-    console.error('Error formatting timestamp:', error);
-    return '--:--:--';
-  }
-};
-
-const ChatMessage: React.FC<ChatMessageProps> = ({ 
-  content, 
-  sender, 
-  timestamp, 
-  isSystem = false,
+const ChatMessage: React.FC<ChatMessageProps> = ({
+  content,
+  sender,
+  timestamp,
   userId,
   currentUserId,
-  onDelete
+  onDelete,
+  replyCount,
+  isExpanded,
+  onToggleReplies,
+  onReply,
+  isReply = false,
 }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const formattedTime = formatTime(timestamp);
-  
-  if (isSystem) {
-    return (
-      <MessageContainer isSystem={true}>
-        <MessageContent>
-          <Timestamp>[{formattedTime}]</Timestamp> *** {content} ***
-        </MessageContent>
-      </MessageContainer>
-    );
-  }
+  const formattedTime = new Date(timestamp).toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false 
+  });
 
-  const canDelete = userId && currentUserId && userId === currentUserId;
+  const isOwnMessage = userId === currentUserId;
 
   return (
-    <MessageContainer isSystem={false}>
+    <MessageContainer isReply={isReply}>
       <MessageContent>
-        <Timestamp>[{formattedTime}]</Timestamp> &lt;<Sender>{sender}</Sender>&gt; {content}
-      </MessageContent>
-      {canDelete && (
-        <>
-          <MenuTrigger onClick={() => setIsMenuOpen(true)}>⋮</MenuTrigger>
-          <MessageOptions
-            isOpen={isMenuOpen}
-            onClose={() => setIsMenuOpen(false)}
-            onDelete={() => {
-              if (onDelete) {
-                onDelete();
-                setIsMenuOpen(false);
-              }
-            }}
+        <Timestamp>[{formattedTime}]</Timestamp>
+        <Sender>&lt;{sender}&gt;</Sender>
+        <MessageText>
+          <span>{content}</span>
+          {!isReply && replyCount > 0 && (
+            <ReplyCount onClick={onToggleReplies}>
+              [{isExpanded ? '-' : '+'} {replyCount}]
+            </ReplyCount>
+          )}
+        </MessageText>
+        <OptionsWrapper>
+          <MessageOptions 
+            onDelete={onDelete} 
+            onReply={onReply}
+            canDelete={isOwnMessage}
+            canReply={!isReply}
           />
-        </>
-      )}
+        </OptionsWrapper>
+      </MessageContent>
     </MessageContainer>
   );
 };

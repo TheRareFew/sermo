@@ -27,6 +27,8 @@ export interface Message {
   channel_id: string;
   created_at: string;
   is_system?: boolean;
+  parent_id?: string;
+  reply_count?: number;
 }
 
 // Store Message type
@@ -39,6 +41,9 @@ export interface StoreMessage {
   attachments: Attachment[];
   createdAt: string;
   updatedAt: string;
+  parentId?: string;
+  replyCount: number;
+  isExpanded?: boolean;
 }
 
 // Attachment type
@@ -117,7 +122,7 @@ export interface UsersState {
 
 // WebSocket message types
 export interface WebSocketMessageBase {
-  type: 'join_channel' | 'leave_channel' | 'message' | 'message_sent' | 'channel_access_denied' | 'user_status' | 'presence_update' | 'channel_join_error' | 'channel_joined' | 'channel_left' | 'error';
+  type: 'join_channel' | 'leave_channel' | 'message' | 'message_sent' | 'channel_access_denied' | 'user_status' | 'presence_update' | 'channel_join_error' | 'channel_joined' | 'channel_left' | 'error' | 'new_reply';
 }
 
 export interface WebSocketErrorMessage extends WebSocketMessageBase {
@@ -139,7 +144,7 @@ export interface WebSocketChannelLeftMessage extends WebSocketMessageBase {
 }
 
 export interface WebSocketChannelMessage extends WebSocketMessageBase {
-  type: 'message';
+  type: 'message' | 'new_reply';
   message: {
     id: string | number;
     content: string;
@@ -147,6 +152,7 @@ export interface WebSocketChannelMessage extends WebSocketMessageBase {
     sender_id: string | number;
     created_at: string;
   };
+  parentId?: string | number;
 }
 
 export interface WebSocketStatusMessage extends WebSocketMessageBase {

@@ -240,10 +240,10 @@ const MainLayout: React.FC = () => {
       console.log('Received WebSocket message:', message);
       
       // Handle broadcast messages
-      if (message.type === 'message') {
+      if (message.type === 'message' || message.type === 'new_reply') {
         // Type guard to ensure we have a channel message
         const isChannelMessage = (msg: WebSocketMessage): msg is WebSocketChannelMessage => {
-          return msg.type === 'message' && 'message' in msg;
+          return (msg.type === 'message' || msg.type === 'new_reply') && 'message' in msg;
         };
 
         if (!isChannelMessage(message)) {
@@ -252,33 +252,31 @@ const MainLayout: React.FC = () => {
         }
 
         try {
-          const { id, content, channel_id, sender_id, created_at } = message.message;
-          console.log('Processing message:', { id, content, channel_id, sender_id, created_at });
-          
-          if (!id || !content || !channel_id || !sender_id || !created_at) {
-            console.error('Invalid message format:', message.message);
-            return;
-          }
-
-          const storeMessage = {
-            id: String(id),
-            content,
-            channelId: String(channel_id),
-            userId: String(sender_id),
+          const { message: wsMessage } = message;
+          const storeMessage: StoreMessage = {
+            id: wsMessage.id.toString(),
+            content: wsMessage.content,
+            channelId: wsMessage.channel_id.toString(),
+            userId: wsMessage.sender_id.toString(),
             reactions: [],
             attachments: [],
-            createdAt: created_at,
-            updatedAt: created_at
+            createdAt: wsMessage.created_at,
+            updatedAt: wsMessage.created_at,
+            replyCount: 0,
+            isExpanded: false,
+            ...(message.type === 'new_reply' && message.parentId ? { parentId: message.parentId.toString() } : {})
           };
 
           dispatch(addMessage(storeMessage));
         } catch (error) {
           console.error('Error handling WebSocket message:', error);
         }
-      } else if (message.type === 'user_status') {
-        // Type guard to ensure we have a status message
+      }
+
+      // Handle status messages
+      if (message.type === 'user_status' || message.type === 'presence_update') {
         const isStatusMessage = (msg: WebSocketMessage): msg is WebSocketStatusMessage => {
-          return msg.type === 'user_status' && 'user_id' in msg && 'status' in msg;
+          return (msg.type === 'user_status' || msg.type === 'presence_update') && 'user_id' in msg && 'status' in msg;
         };
 
         if (!isStatusMessage(message)) {
@@ -287,14 +285,14 @@ const MainLayout: React.FC = () => {
         }
 
         dispatch(updateUserStatus({
-          userId: String(message.user_id),
+          userId: message.user_id.toString(),
           status: message.status
         }));
       }
     };
 
-    const cleanup = wsService.onMessage(handleWebSocketMessage);
-    return cleanup;
+    const unsubscribe = wsService.onMessage(handleWebSocketMessage);
+    return () => unsubscribe();
   }, [dispatch]);
 
   const handleChannelClick = async (channelId: string) => {

@@ -87,6 +87,33 @@ const messagesSlice = createSlice({
         }
       }
     },
+    setReplies: (state, action: PayloadAction<{ channelId: string; messageId: string; replies: StoreMessage[] }>) => {
+      const { channelId, messageId, replies } = action.payload;
+      const messages = state.messagesByChannel[channelId];
+      if (messages) {
+        const message = messages.find((msg: StoreMessage) => msg.id === messageId);
+        if (message) {
+          // Add replies to the channel's messages
+          state.messagesByChannel[channelId] = [
+            ...messages,
+            ...replies.filter(reply => !messages.some(msg => msg.id === reply.id))
+          ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          
+          // Update reply count
+          message.replyCount = replies.length;
+        }
+      }
+    },
+    toggleExpanded: (state, action: PayloadAction<{ channelId: string; messageId: string }>) => {
+      const { channelId, messageId } = action.payload;
+      const messages = state.messagesByChannel[channelId];
+      if (messages) {
+        const message = messages.find((msg: StoreMessage) => msg.id === messageId);
+        if (message) {
+          message.isExpanded = !message.isExpanded;
+        }
+      }
+    },
   },
 });
 
@@ -97,6 +124,8 @@ export const {
   deleteMessage,
   addReaction,
   removeReaction,
+  setReplies,
+  toggleExpanded
 } = messagesSlice.actions;
 
 export default messagesSlice.reducer; 

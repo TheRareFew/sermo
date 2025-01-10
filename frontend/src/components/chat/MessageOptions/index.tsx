@@ -1,82 +1,116 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 
-const MenuContainer = styled.div`
+interface MessageOptionsProps {
+  onDelete: () => void;
+  onReply: () => void;
+  canDelete: boolean;
+  canReply: boolean;
+}
+
+const OptionsContainer = styled.div`
+  position: relative;
+  display: inline-block;
+`;
+
+const MenuTrigger = styled.button`
+  background: none;
+  border: 1px solid #444;
+  color: ${props => props.theme.colors.text};
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  padding: 2px 6px;
+  font-size: inherit;
+
+  &:hover {
+    background-color: ${props => props.theme.colors.hover};
+    border-color: ${props => props.theme.colors.primary};
+  }
+`;
+
+const OptionsMenu = styled.div<{ isOpen: boolean }>`
   position: absolute;
-  top: 0;
-  right: 24px;
-  background: ${props => props.theme.background};
-  border: 2px solid #000;
-  border-right-color: #fff;
-  border-bottom-color: #fff;
-  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+  right: 0;
+  bottom: 100%;
+  background-color: ${props => props.theme.colors.background};
+  border: 2px solid ${props => props.theme.colors.border};
+  display: ${({ isOpen }) => isOpen ? 'block' : 'none'};
+  z-index: 10;
   min-width: 120px;
-  font-family: 'VT323', monospace;
-  z-index: 100;
+  font-family: 'Courier New', monospace;
+  margin-bottom: 4px;
 `;
 
 const MenuItem = styled.button`
-  width: 100%;
-  padding: 8px 12px;
   background: none;
   border: none;
-  text-align: left;
-  font-family: inherit;
-  font-size: 1em;
+  color: ${props => props.theme.colors.text};
   cursor: pointer;
-  color: ${props => props.theme.text};
+  padding: 4px 8px;
+  width: 100%;
+  text-align: left;
+  display: block;
+  font-family: inherit;
+  font-size: inherit;
 
   &:hover {
-    background: ${props => props.theme.primary};
-    color: ${props => props.theme.background};
-  }
-
-  &.danger {
-    color: #ff0000;
-    &:hover {
-      background: #ff0000;
-      color: ${props => props.theme.background};
-    }
+    background-color: ${props => props.theme.colors.hover};
+    color: ${props => props.theme.colors.primary};
   }
 `;
 
-interface MessageOptionsProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onDelete: () => void;
-}
-
 const MessageOptions: React.FC<MessageOptionsProps> = ({
-  isOpen,
-  onClose,
   onDelete,
+  onReply,
+  canDelete,
+  canReply,
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
+        setIsOpen(false);
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
+    document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isOpen, onClose]);
+  }, []);
 
-  if (!isOpen) return null;
+  const handleClose = () => {
+    setIsOpen(false);
+  };
+
+  const handleDelete = () => {
+    onDelete();
+    handleClose();
+  };
+
+  const handleReply = () => {
+    onReply();
+    handleClose();
+  };
+
+  if (!canDelete && !canReply) {
+    return null;
+  }
 
   return (
-    <MenuContainer ref={menuRef}>
-      <MenuItem className="danger" onClick={onDelete}>
-        Delete Message
-      </MenuItem>
-    </MenuContainer>
+    <OptionsContainer ref={menuRef}>
+      <MenuTrigger onClick={() => setIsOpen(!isOpen)}>[...]</MenuTrigger>
+      <OptionsMenu isOpen={isOpen}>
+        {canReply && (
+          <MenuItem onClick={handleReply}>[R]eply</MenuItem>
+        )}
+        {canDelete && (
+          <MenuItem onClick={handleDelete}>[D]elete</MenuItem>
+        )}
+      </OptionsMenu>
+    </OptionsContainer>
   );
 };
 

@@ -1,7 +1,7 @@
 import { WebSocketMessage, WebSocketChannelJoinMessage, WebSocketChannelMessage, StoreMessage } from '../../types';
 import { getAuthToken } from '../api/auth';
 import { store } from '../../store';
-import { addMessage } from '../../store/messages/messagesSlice';
+import { addMessage, setReplies } from '../../store/messages/messagesSlice';
 
 class WebSocketService {
   private socket: WebSocket | null = null;
@@ -417,73 +417,77 @@ class WebSocketService {
 
   private handleMessage = (event: MessageEvent) => {
     try {
-      const message = JSON.parse(event.data) as WebSocketMessage;
-      console.log('WebSocket message received:', message);
+      const data = JSON.parse(event.data) as WebSocketMessage;
+      console.log('Received WebSocket message:', data);
 
-      // Handle join channel response
-      if (message.type === 'channel_joined') {
-        const resolvers = this.joinChannelResolvers.get(String(message.channel_id));
+      if (data.type === 'message' || data.type === 'new_reply') {
+        if (!this.processedMessageIds.has(data.message.id.toString())) {
+          this.processedMessageIds.add(data.message.id.toString());
+          const transformedMessage: StoreMessage = {
+            id: data.message.id.toString(),
+            content: data.message.content,
+            channelId: data.message.channel_id.toString(),
+            userId: data.message.sender_id.toString(),
+            createdAt: data.message.created_at,
+            updatedAt: data.message.created_at,
+            reactions: [],
+            attachments: [],
+            replyCount: 0,
+            isExpanded: false,
+            ...(data.type === 'new_reply' && data.parentId ? { parentId: data.parentId.toString() } : {})
+          };
+          store.dispatch(addMessage(transformedMessage));
+        }
+      } else if (data.type === 'channel_joined') {
+        const resolvers = this.joinChannelResolvers.get(String(data.channel_id));
         if (resolvers) {
-          console.log('Successfully joined channel:', message.channel_id);
-          this.joinedChannels.add(String(message.channel_id));
+          console.log('Successfully joined channel:', data.channel_id);
+          this.joinedChannels.add(String(data.channel_id));
           resolvers.resolve();
-          this.joinChannelResolvers.delete(String(message.channel_id));
+          this.joinChannelResolvers.delete(String(data.channel_id));
           this.processMessageQueue().catch(error => {
             console.error('Error processing message queue after join:', error);
           });
         }
-        return;
-      }
-
-      // Handle channel left response
-      if (message.type === 'channel_left') {
-        const channelId = String(message.channel_id);
+      } else if (data.type === 'channel_left') {
+        const channelId = String(data.channel_id);
         this.joinedChannels.delete(channelId);
         if (channelId === this.currentChannelId) {
           this.currentChannelId = null;
         }
-        return;
-      }
-
-      // Handle join channel error
-      if (message.type === 'error') {
-        console.error('WebSocket error message:', message);
+      } else if (data.type === 'error') {
+        console.error('WebSocket error message:', data);
         
         // Handle channel-specific errors
-        if (message.code === 'channel_not_found' || message.message?.includes('channel')) {
+        if (data.code === 'channel_not_found' || data.message?.includes('channel')) {
           const channelId = this.currentChannelId;
           if (channelId) {
             const resolvers = this.joinChannelResolvers.get(channelId);
             if (resolvers) {
-              resolvers.reject(new Error(message.message || 'Failed to join channel'));
+              resolvers.reject(new Error(data.message || 'Failed to join channel'));
               this.joinChannelResolvers.delete(channelId);
             }
           }
         }
         
         this.handleError({
-          name: message.code || 'UNKNOWN_ERROR',
-          message: message.message || message.content || 'Unknown error occurred'
+          name: data.code || 'UNKNOWN_ERROR',
+          message: data.message || data.content || 'Unknown error occurred'
         });
-        return;
+      } else if (data.type === 'user_status' || data.type === 'presence_update') {
+        console.log('User status update:', data);
       }
 
-      // Handle status messages
-      if (message.type === 'user_status' || message.type === 'presence_update') {
-        console.log('User status update:', message);
-      }
-
-      // Broadcast message to all handlers
       this.messageHandlers.forEach(handler => {
         try {
-          handler(message);
+          handler(data);
         } catch (error) {
           console.error('Error in message handler:', error);
         }
       });
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
-      this.handleError(new Error('Failed to parse WebSocket message'));
+      this.handleError(error);
     }
   };
 
