@@ -6,7 +6,7 @@ import SignupForm from './components/auth/SignupForm';
 import ForgotPassword from './components/auth/ForgotPassword';
 import MainLayout from './components/layout/MainLayout';
 import { theme } from './styles/themes/default';
-import { RootState } from './store/types';
+import { RootState } from './types';
 
 const App: React.FC = () => {
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);

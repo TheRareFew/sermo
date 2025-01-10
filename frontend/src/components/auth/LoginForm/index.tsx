@@ -5,7 +5,7 @@ import Button from '../../common/Button';
 import Input from '../../common/Input';
 import Modal from '../../common/Modal';
 import { loginStart, loginSuccess, loginFailure } from '../../../store/auth/authSlice';
-import { RootState } from '../../../store/types';
+import { RootState } from '../../../types';
 import * as authService from '../../../services/api/auth';
 
 const LoginContainer = styled.div`

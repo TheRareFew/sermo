@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { UsersState, User } from '../types';
+import { UsersState, User } from '../../types';
 
 const initialState: UsersState = {
   users: [],
@@ -12,38 +12,22 @@ const usersSlice = createSlice({
   name: 'users',
   initialState,
   reducers: {
-    fetchUsersStart: (state) => {
-      state.loading = true;
-      state.error = null;
-    },
-    fetchUsersSuccess: (state, action: PayloadAction<User[]>) => {
+    setUsers: (state, action: PayloadAction<User[]>) => {
       state.users = action.payload;
-      state.loading = false;
-      state.error = null;
-    },
-    fetchUsersFailure: (state, action: PayloadAction<string>) => {
-      state.loading = false;
-      state.error = action.payload;
+      state.onlineUsers = action.payload
+        .filter(user => user.status === 'online')
+        .map(user => user.id);
     },
     updateUserPresence: (state, action: PayloadAction<{ userId: string; status: User['status'] }>) => {
       const user = state.users.find(u => u.id === action.payload.userId);
       if (user) {
         user.status = action.payload.status;
         if (action.payload.status === 'online') {
-          if (!state.onlineUsers.includes(action.payload.userId)) {
-            state.onlineUsers.push(action.payload.userId);
+          if (!state.onlineUsers.includes(user.id)) {
+            state.onlineUsers.push(user.id);
           }
         } else {
-          state.onlineUsers = state.onlineUsers.filter(id => id !== action.payload.userId);
-        }
-      }
-    },
-    addUser: (state, action: PayloadAction<User>) => {
-      const exists = state.users.some(user => user.id === action.payload.id);
-      if (!exists) {
-        state.users.push(action.payload);
-        if (action.payload.status === 'online') {
-          state.onlineUsers.push(action.payload.id);
+          state.onlineUsers = state.onlineUsers.filter(id => id !== user.id);
         }
       }
     },
@@ -54,13 +38,5 @@ const usersSlice = createSlice({
   },
 });
 
-export const {
-  fetchUsersStart,
-  fetchUsersSuccess,
-  fetchUsersFailure,
-  updateUserPresence,
-  addUser,
-  removeUser,
-} = usersSlice.actions;
-
+export const { setUsers, updateUserPresence, removeUser } = usersSlice.actions;
 export default usersSlice.reducer; 

@@ -3,10 +3,10 @@ import { useDispatch } from 'react-redux';
 import styled from 'styled-components';
 import wsService from '../../../services/websocket';
 import { addMessage } from '../../../store/messages/messagesSlice';
-import { StoreMessage } from '../../../store/types';
+import { StoreMessage } from '../../../types';
 
 interface MessageInputProps {
-  channelId: number;
+  channelId: string | null;
 }
 
 const InputContainer = styled.div`
@@ -48,7 +48,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }) => {
         const optimisticMessage: StoreMessage = {
           id: `temp-${Date.now()}`,
           content: message.trim(),
-          channelId: String(channelId),
+          channelId: channelId,
           userId: '1', // TODO: Get from auth state
           reactions: [],
           attachments: [],

@@ -5,7 +5,8 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'headers'> {
   headers?: Record<string, string>;
 }
 
-export const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// Hardcode the API URL for now
+export const API_URL = 'http://localhost:8000/api';
 
 export async function apiRequest<T>(
   endpoint: string,
@@ -28,7 +29,10 @@ export async function apiRequest<T>(
     requestHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  const url = `${API_URL}${endpoint}`;
+  // Remove any leading slashes from the endpoint
+  const cleanEndpoint = endpoint.replace(/^\/+/, '');
+  const url = `${API_URL}/${cleanEndpoint}`;
+  
   console.log(`Making API request to ${url}`, {
     method: rest.method || 'GET',
     headers: requestHeaders,

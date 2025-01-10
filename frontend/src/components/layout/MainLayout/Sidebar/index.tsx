@@ -104,11 +104,13 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ onCreateChannel }) => {
   const dispatch = useDispatch();
+  // All channels are accessible by default to all users
   const channels = useSelector((state: RootState) => state.chat.channels);
   const users = useSelector((state: RootState) => state.chat.users);
   const activeChannelId = useSelector((state: RootState) => state.chat.activeChannelId);
 
-  const handleChannelClick = (channelId: number) => {
+  const handleChannelClick = (channelId: string) => {
+    // Users can freely switch between any channel
     dispatch(setActiveChannel(channelId));
   };
 
@@ -122,6 +124,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onCreateChannel }) => {
           </Button>
         </SectionHeader>
         <ChannelList>
+          {/* Display all channels - no filtering based on permissions */}
           {channels.map((channel: Channel) => (
             <ChannelItem
               key={channel.id}

@@ -73,6 +73,14 @@ Redux is used for state management with the following stores:
 - `messages`: Chat messages
 - `users`: User presence and status
 
+## Channel Access
+
+By default, all users have access to all channels in the system. This means:
+- All channels are visible in the channel list
+- Users can freely join and switch between any channel
+- Channel messages are accessible to all users
+- No permission checks are required to view or join channels
+
 ## Services
 
 - `api`: REST API service for CRUD operations

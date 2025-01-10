@@ -3,10 +3,8 @@ import styled from 'styled-components';
 import { useDispatch, useSelector } from 'react-redux';
 import ChatMessage from '../../common/ChatMessage';
 import { getChannelMessages } from '../../../services/api/chat';
-import { fetchMessagesStart, fetchMessagesSuccess, fetchMessagesFailure } from '../../../store/messages/messagesSlice';
-import { Message as ApiMessage } from '../../../types';
-import { StoreMessage } from '../../../store/types';
-import { RootState } from '../../../store/rootReducer';
+import { setMessages } from '../../../store/messages/messagesSlice';
+import { Message as ApiMessage, StoreMessage, RootState, User } from '../../../types';
 
 const MessageListContainer = styled.div`
   flex: 1;
@@ -54,7 +52,7 @@ const NoMessagesMessage = styled.div`
 `;
 
 interface MessageListProps {
-  channelId: number | null;
+  channelId: string | null;
 }
 
 const MESSAGES_PER_PAGE = 30;
@@ -110,7 +108,7 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   });
 
   const users = useSelector((state: RootState) => {
-    const allUsers = state.chat?.users || {};
+    const allUsers = state.chat?.users || {} as { [key: number]: User };
     console.log('Selected users:', {
       userCount: Object.keys(allUsers).length,
       users: allUsers
@@ -128,7 +126,6 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   useEffect(() => {
     if (channelId) {
       console.log('Loading messages for channel:', channelId);
-      dispatch(fetchMessagesStart());
       setIsLoadingMore(true);
       setHasMoreMessages(true);
       setError(null);
@@ -142,7 +139,7 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
           }
           const transformedMessages: StoreMessage[] = newMessages.map(transformMessage);
           console.log('Transformed messages:', transformedMessages);
-          dispatch(fetchMessagesSuccess({ 
+          dispatch(setMessages({ 
             channelId: String(channelId), 
             messages: transformedMessages 
           }));
@@ -150,7 +147,6 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
         .catch(error => {
           console.error('Failed to fetch messages:', error);
           setError('Failed to load messages. Please try again.');
-          dispatch(fetchMessagesFailure(error.message));
         })
         .finally(() => {
           setIsLoadingMore(false);
@@ -183,7 +179,7 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
         if (olderMessages.length > 0) {
           const transformedMessages: StoreMessage[] = olderMessages.map(transformMessage);
           const allMessages: StoreMessage[] = [...transformedMessages, ...messages];
-          dispatch(fetchMessagesSuccess({ 
+          dispatch(setMessages({ 
             channelId: String(channelId), 
             messages: allMessages
           }));
@@ -260,7 +256,11 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
         )}
 
         {messages.map((msg: StoreMessage) => {
-          const sender = users[Number(msg.userId)]?.username || 'Unknown';
+          const userId = Number(msg.userId);
+          console.log('Looking up user:', { userId, availableUsers: users });
+          const user = users[userId];
+          console.log('Found user:', user);
+          const sender = user?.username || `User ${msg.userId}`;
           return (
             <div key={msg.id} id={`message-${msg.id}`} style={{ margin: '4px 0' }}>
               <ChatMessage

@@ -5,7 +5,7 @@ interface ChannelListItemProps {
   name: string;
   isActive: boolean;
   hasUnread: boolean;
-  isDirect?: boolean;
+  isDirect: boolean;
   onClick: () => void;
 }
 
@@ -42,8 +42,8 @@ const ChannelListItem: React.FC<ChannelListItemProps> = ({
   name,
   isActive,
   hasUnread,
-  isDirect = false,
-  onClick
+  isDirect,
+  onClick,
 }) => {
   return (
     <Container isActive={isActive} onClick={onClick}>

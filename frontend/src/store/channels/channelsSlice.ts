@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { ChannelsState, Channel } from '../types';
+import { ChannelsState, Channel } from '../../types';
 
 const initialState: ChannelsState = {
   channels: [],
@@ -12,33 +12,29 @@ const channelsSlice = createSlice({
   name: 'channels',
   initialState,
   reducers: {
-    fetchChannelsStart: (state) => {
-      state.loading = true;
-      state.error = null;
-    },
-    fetchChannelsSuccess: (state, action: PayloadAction<Channel[]>) => {
+    setChannels: (state, action: PayloadAction<Channel[]>) => {
       state.channels = action.payload;
       state.loading = false;
       state.error = null;
     },
-    fetchChannelsFailure: (state, action: PayloadAction<string>) => {
-      state.loading = false;
-      state.error = action.payload;
-    },
     setActiveChannel: (state, action: PayloadAction<Channel>) => {
       state.activeChannel = action.payload;
-    },
-    updateChannelUnreadCount: (state, action: PayloadAction<{ channelId: string; count: number }>) => {
-      const channel = state.channels.find(c => c.id === action.payload.channelId);
-      if (channel) {
-        channel.unreadCount = action.payload.count;
-      }
     },
     addChannel: (state, action: PayloadAction<Channel>) => {
       state.channels.push(action.payload);
     },
+    updateChannelUnreadCount: (state, action: PayloadAction<{ channelId: string; count: number }>) => {
+      const channel = state.channels.find((c: Channel) => c.id === action.payload.channelId);
+      if (channel) {
+        channel.unreadCount = action.payload.count;
+      }
+    },
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+      state.error = null;
+    },
     removeChannel: (state, action: PayloadAction<string>) => {
-      state.channels = state.channels.filter(channel => channel.id !== action.payload);
+      state.channels = state.channels.filter((channel: Channel) => channel.id !== action.payload);
       if (state.activeChannel?.id === action.payload) {
         state.activeChannel = null;
       }
@@ -47,12 +43,11 @@ const channelsSlice = createSlice({
 });
 
 export const {
-  fetchChannelsStart,
-  fetchChannelsSuccess,
-  fetchChannelsFailure,
+  setChannels,
   setActiveChannel,
-  updateChannelUnreadCount,
   addChannel,
+  updateChannelUnreadCount,
+  setLoading,
   removeChannel,
 } = channelsSlice.actions;
 

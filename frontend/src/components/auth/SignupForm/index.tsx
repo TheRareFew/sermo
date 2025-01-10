@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import Button from '../../common/Button';
 import Input from '../../common/Input';
 import { signupStart, signupSuccess, signupFailure } from '../../../store/auth/authSlice';
-import { RootState } from '../../../store/types';
+import { RootState } from '../../../types';
 import * as authService from '../../../services/api/auth';
 
 const SignupContainer = styled.div`

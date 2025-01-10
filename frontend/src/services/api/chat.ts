@@ -2,7 +2,7 @@ import { Channel, Message, User } from '../../types';
 import { apiRequest } from './utils';
 
 interface ApiUser {
-  id: number;
+  id: string;
   username: string;
   status: 'online' | 'offline' | 'away' | 'busy';
   last_seen: string;
@@ -10,15 +10,19 @@ interface ApiUser {
 
 // Transform API user to our User type
 const transformUser = (apiUser: ApiUser): User => ({
-  ...apiUser,
-  email: '', // Set default values for required fields that the channel API doesn't provide
-  full_name: apiUser.username, // Use username as full_name if not provided
+  id: apiUser.id,
+  username: apiUser.username,
+  email: `${apiUser.username}@example.com`, // Placeholder email since it's required
+  full_name: apiUser.username, // Using username as full_name since it's required
+  status: apiUser.status || 'offline',
+  last_seen: apiUser.last_seen
 });
 
 export const getChannels = async (): Promise<Channel[]> => {
   console.log('Fetching channels...');
   try {
-    const channels = await apiRequest<Channel[]>('/api/channels');
+    // All channels are accessible by default to all users
+    const channels = await apiRequest<Channel[]>('/channels');
     console.log('Received channels:', channels);
     return channels;
   } catch (error) {
@@ -27,10 +31,10 @@ export const getChannels = async (): Promise<Channel[]> => {
   }
 };
 
-export const getChannelMessages = async (channelId: number, limit: number = 50, skip: number = 0): Promise<Message[]> => {
+export const getChannelMessages = async (channelId: string, limit: number = 50, skip: number = 0): Promise<Message[]> => {
   console.log(`Fetching messages for channel ${channelId} with limit ${limit} and skip ${skip}...`);
   try {
-    if (!channelId || channelId <= 0) {
+    if (!channelId) {
       throw new Error('Invalid channel ID');
     }
 
@@ -42,17 +46,14 @@ export const getChannelMessages = async (channelId: number, limit: number = 50, 
       throw new Error('Invalid skip value');
     }
 
-    const messages = await apiRequest<Message[]>(`/api/channels/${channelId}/messages?limit=${limit}&skip=${skip}`);
+    const messages = await apiRequest<Message[]>(`/channels/${channelId}/messages?limit=${limit}&skip=${skip}`);
     console.log('Received messages:', messages);
 
     // Validate and transform messages
     const validMessages = messages
       .filter(msg => msg && msg.id && msg.content && msg.channel_id && msg.sender_id)
       .map(msg => ({
-        id: Number(msg.id),
-        content: msg.content,
-        channel_id: Number(msg.channel_id),
-        sender_id: Number(msg.sender_id),
+        ...msg,
         created_at: msg.created_at || new Date().toISOString(),
         is_system: msg.is_system || false
       }));
@@ -65,10 +66,10 @@ export const getChannelMessages = async (channelId: number, limit: number = 50, 
   }
 };
 
-export const getChannelUsers = async (channelId: number): Promise<User[]> => {
+export const getChannelUsers = async (channelId: string): Promise<User[]> => {
   console.log(`Fetching users for channel ${channelId}...`);
   try {
-    const apiUsers = await apiRequest<ApiUser[]>(`/api/channels/${channelId}/users`);
+    const apiUsers = await apiRequest<ApiUser[]>(`/channels/${channelId}/members`);
     console.log('Received users:', apiUsers);
     const users = apiUsers.map(transformUser);
     console.log('Transformed users:', users);
@@ -82,7 +83,7 @@ export const getChannelUsers = async (channelId: number): Promise<User[]> => {
 export const createChannel = async (name: string, description?: string): Promise<Channel> => {
   console.log('Creating channel:', { name, description });
   try {
-    const channel = await apiRequest<Channel>('/api/channels', {
+    const channel = await apiRequest<Channel>('/channels', {
       method: 'POST',
       body: JSON.stringify({ name, description }),
     });
@@ -94,23 +95,25 @@ export const createChannel = async (name: string, description?: string): Promise
   }
 };
 
-export const joinChannel = async (channelId: number): Promise<void> => {
+export const joinChannel = async (channelId: string): Promise<void> => {
   console.log(`Joining channel ${channelId}...`);
   try {
-    await apiRequest(`/api/channels/${channelId}/join`, {
+    // All channels are accessible by default, this is just to sync the user's presence
+    await apiRequest(`/channels/${channelId}/join`, {
       method: 'POST',
     });
     console.log(`Joined channel ${channelId}`);
   } catch (error) {
+    // Even if joining fails, the user can still view the channel
     console.error(`Error joining channel ${channelId}:`, error);
-    throw error;
+    console.warn('User can still view channel messages despite join error');
   }
 };
 
-export const leaveChannel = async (channelId: number): Promise<void> => {
+export const leaveChannel = async (channelId: string): Promise<void> => {
   console.log(`Leaving channel ${channelId}...`);
   try {
-    await apiRequest(`/api/channels/${channelId}/leave`, {
+    await apiRequest(`/channels/${channelId}/leave`, {
       method: 'POST',
     });
     console.log(`Left channel ${channelId}`);

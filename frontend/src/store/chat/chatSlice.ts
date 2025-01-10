@@ -4,7 +4,7 @@ import { ChatState, Channel, User } from '../../types';
 const initialState: ChatState = {
   activeChannelId: null,
   channels: [],
-  users: {},
+  users: {} as { [key: string]: User },
   loading: false,
   error: null,
 };
@@ -13,7 +13,7 @@ const chatSlice = createSlice({
   name: 'chat',
   initialState,
   reducers: {
-    setActiveChannel: (state, action: PayloadAction<number>) => {
+    setActiveChannel: (state, action: PayloadAction<string>) => {
       console.log('Setting active channel:', action.payload);
       state.activeChannelId = action.payload;
     },
@@ -28,25 +28,25 @@ const chatSlice = createSlice({
       state.channels.push(action.payload);
     },
     
-    removeChannel: (state, action: PayloadAction<number>) => {
+    removeChannel: (state, action: PayloadAction<string>) => {
       console.log('Removing channel:', action.payload);
       state.channels = state.channels.filter(channel => channel.id !== action.payload);
     },
     
     setUsers: (state, action: PayloadAction<User[]>) => {
       console.log('Setting users:', action.payload);
-      const users: { [userId: number]: User } = {};
-      action.payload.forEach(user => {
-        users[user.id] = user;
-      });
-      state.users = users;
+      state.users = action.payload.reduce((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+      }, {} as { [key: string]: User });
     },
     
-    updateUserStatus: (state, action: PayloadAction<{ userId: number; status: User['status'] }>) => {
+    updateUserStatus: (state, action: PayloadAction<{ userId: string; status: User['status'] }>) => {
       console.log('Updating user status:', action.payload);
-      if (state.users[action.payload.userId]) {
-        state.users[action.payload.userId].status = action.payload.status;
-        state.users[action.payload.userId].last_seen = new Date().toISOString();
+      const user = state.users[action.payload.userId];
+      if (user) {
+        user.status = action.payload.status;
+        user.last_seen = new Date().toISOString();
       }
     },
     

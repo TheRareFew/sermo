@@ -1,6 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { MessagesState, Reaction, StoreMessage } from '../types';
-import { Message as ApiMessage } from '../../types';
+import { MessagesState, Reaction, StoreMessage } from '../../types';
 
 const initialState: MessagesState = {
   messagesByChannel: {},
@@ -12,77 +11,37 @@ const messagesSlice = createSlice({
   name: 'messages',
   initialState,
   reducers: {
-    fetchMessagesStart: (state) => {
-      console.log('Starting message fetch');
-      state.loading = true;
-      state.error = null;
-    },
-    fetchMessagesSuccess: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[] }>) => {
-      console.log('Message fetch success:', action.payload);
-      // Sort messages by createdAt in ascending order (oldest first)
-      const sortedMessages = [...action.payload.messages].sort((a, b) => 
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
-
-      state.messagesByChannel[action.payload.channelId] = sortedMessages;
+    setMessages: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[] }>) => {
+      const { channelId, messages } = action.payload;
+      state.messagesByChannel[channelId] = messages;
       state.loading = false;
       state.error = null;
-      console.log('Updated message state:', {
-        channelId: action.payload.channelId,
-        messageCount: sortedMessages.length,
-        messages: sortedMessages,
-        state: state
-      });
-    },
-    fetchMessagesFailure: (state, action: PayloadAction<string>) => {
-      console.log('Message fetch failed:', action.payload);
-      state.loading = false;
-      state.error = action.payload;
     },
     addMessage: (state, action: PayloadAction<StoreMessage>) => {
-      console.log('Adding message to store:', action.payload);
       const { channelId } = action.payload;
       
-      // Initialize the channel's message array if it doesn't exist
+      // Initialize channel messages array if it doesn't exist
       if (!state.messagesByChannel[channelId]) {
         state.messagesByChannel[channelId] = [];
       }
 
       // Check if message already exists
       const existingMessageIndex = state.messagesByChannel[channelId].findIndex(
-        msg => msg.id === action.payload.id
+        (msg: StoreMessage) => msg.id === action.payload.id
       );
 
       if (existingMessageIndex === -1) {
-        // Add new message at the end (it's the newest)
+        // Add new message
         state.messagesByChannel[channelId].push(action.payload);
-        // No need to sort since we're maintaining chronological order and new messages
-        // are always newer than existing ones
-        console.log('Updated message state after add:', {
-          channelId,
-          messageCount: state.messagesByChannel[channelId].length,
-          messages: state.messagesByChannel[channelId],
-          state: state
-        });
-      } else {
-        // Update existing message
-        state.messagesByChannel[channelId][existingMessageIndex] = action.payload;
-        console.log('Updated existing message:', {
-          messageId: action.payload.id,
-          channelId,
-          messageCount: state.messagesByChannel[channelId].length,
-          messages: state.messagesByChannel[channelId],
-          state: state
-        });
       }
     },
-    updateMessage: (state, action: PayloadAction<StoreMessage>) => {
+    updateMessage: (state, action: PayloadAction<{ channelId: string; id: string; message: StoreMessage }>) => {
       const { channelId, id } = action.payload;
       const messages = state.messagesByChannel[channelId];
       if (messages) {
-        const index = messages.findIndex(msg => msg.id === id);
+        const index = messages.findIndex((msg: StoreMessage) => msg.id === id);
         if (index !== -1) {
-          messages[index] = action.payload;
+          messages[index] = action.payload.message;
         }
       }
     },
@@ -90,18 +49,18 @@ const messagesSlice = createSlice({
       const { channelId, messageId } = action.payload;
       const messages = state.messagesByChannel[channelId];
       if (messages) {
-        state.messagesByChannel[channelId] = messages.filter(msg => msg.id !== messageId);
+        state.messagesByChannel[channelId] = messages.filter((msg: StoreMessage) => msg.id !== messageId);
       }
     },
     addReaction: (state, action: PayloadAction<{ channelId: string; messageId: string; reaction: Reaction }>) => {
       const { channelId, messageId, reaction } = action.payload;
       const messages = state.messagesByChannel[channelId];
       if (messages) {
-        const message = messages.find(msg => msg.id === messageId);
+        const message = messages.find((msg: StoreMessage) => msg.id === messageId);
         if (message) {
           // Check if reaction already exists
           const existingReactionIndex = message.reactions.findIndex(
-            r => r.id === reaction.id || (r.emoji === reaction.emoji && r.userId === reaction.userId)
+            (r: Reaction) => r.id === reaction.id || (r.emoji === reaction.emoji && r.userId === reaction.userId)
           );
           if (existingReactionIndex === -1) {
             message.reactions.push(reaction);
@@ -113,9 +72,9 @@ const messagesSlice = createSlice({
       const { channelId, messageId, reactionId } = action.payload;
       const messages = state.messagesByChannel[channelId];
       if (messages) {
-        const message = messages.find(msg => msg.id === messageId);
+        const message = messages.find((msg: StoreMessage) => msg.id === messageId);
         if (message) {
-          message.reactions = message.reactions.filter(reaction => reaction.id !== reactionId);
+          message.reactions = message.reactions.filter((reaction: Reaction) => reaction.id !== reactionId);
         }
       }
     },
@@ -123,9 +82,7 @@ const messagesSlice = createSlice({
 });
 
 export const {
-  fetchMessagesStart,
-  fetchMessagesSuccess,
-  fetchMessagesFailure,
+  setMessages,
   addMessage,
   updateMessage,
   deleteMessage,

@@ -35,8 +35,10 @@ export const login = async (credentials: LoginCredentials): Promise<AuthResponse
   const formData = new URLSearchParams();
   formData.append('username', credentials.username);
   formData.append('password', credentials.password);
+  formData.append('grant_type', 'password');
 
-  const response = await fetch(`${API_URL}/api/auth/login`, {
+  // Make a direct fetch call to the exact URL we want
+  const response = await fetch('http://localhost:8000/api/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -58,29 +60,20 @@ export const login = async (credentials: LoginCredentials): Promise<AuthResponse
 };
 
 export const signup = async (credentials: SignupCredentials): Promise<AuthResponse> => {
-  const response = await fetch(`${API_URL}/api/auth/register`, {
+  const response = await apiRequest<ApiAuthResponse>('auth/register', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify(credentials),
-    credentials: 'include',
+    requiresAuth: false,
   });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(formatErrorMessage(data as any));
-  }
-
   // Store the token in localStorage
-  localStorage.setItem('auth_token', data.access_token);
-  console.log('Stored token:', data.access_token); // Debug log
-  return transformAuthResponse(data);
+  localStorage.setItem('auth_token', response.access_token);
+  console.log('Stored token:', response.access_token); // Debug log
+  return transformAuthResponse(response);
 };
 
 export const forgotPassword = async (email: string): Promise<void> => {
-  await apiRequest('/api/auth/forgot-password', {
+  await apiRequest('/auth/forgot-password', {
     method: 'POST',
     body: JSON.stringify({ email }),
     requiresAuth: false,
@@ -88,19 +81,17 @@ export const forgotPassword = async (email: string): Promise<void> => {
 };
 
 export const logout = async (): Promise<void> => {
-  await apiRequest('/api/auth/logout', {
+  await apiRequest('/auth/logout', {
     method: 'POST',
   });
   localStorage.removeItem('auth_token');
 };
 
-// Helper function to get the auth token
 export const getAuthToken = (): string | null => {
   const token = localStorage.getItem('auth_token');
   return token ? token : null;
 };
 
-// Helper function to check if user is authenticated
 export const isAuthenticated = (): boolean => {
   const token = getAuthToken();
   if (!token) return false;

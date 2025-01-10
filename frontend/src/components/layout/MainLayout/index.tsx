@@ -15,9 +15,9 @@ import ChannelListItem from '../../common/ChannelListItem';
 import CreateChannelModal from '../../chat/CreateChannelModal';
 import MessageInput from '../../chat/MessageInput';
 import MessageList from '../../chat/MessageList';
-import wsService, { WebSocketMessage } from '../../../services/websocket';
+import wsService from '../../../services/websocket';
 import { getChannels, getChannelUsers } from '../../../services/api/chat';
-import { StoreMessage } from '../../../store/types';
+import { RootState, WebSocketMessage, StoreMessage, Channel, User } from '../../../types';
 
 const MainContainer = styled.div`
   display: flex;
@@ -122,17 +122,21 @@ const MainLayout: React.FC = () => {
   const dispatch = useDispatch();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
-  const activeChannelId = useSelector((state: any) => state.chat.activeChannelId);
-  const channels = useSelector((state: any) => state.chat.channels);
-  const users = useSelector((state: any) => state.chat.users);
-  const activeChannel = channels.find((channel: any) => channel.id === activeChannelId);
+  const { channels, activeChannelId, users } = useSelector((state: RootState) => ({
+    channels: state.chat.channels,
+    activeChannelId: state.chat.activeChannelId,
+    users: state.chat.users as { [key: string]: User }
+  }));
+  const activeChannel = channels.find(channel => channel.id === activeChannelId);
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
+        // Fetch all channels - all channels are accessible by default
         const fetchedChannels = await getChannels();
         dispatch(setChannels(fetchedChannels));
 
+        // Set the first channel as active if there are any channels
         if (fetchedChannels.length > 0) {
           const channelUsers = await getChannelUsers(fetchedChannels[0].id);
           dispatch(setUsers(channelUsers));
@@ -181,6 +185,20 @@ const MainLayout: React.FC = () => {
             return;
           }
 
+          // Check if we have the sender's information
+          if (!users[sender_id]) {
+            console.log('Fetching information for new user:', sender_id);
+            // Fetch updated user list for the channel
+            getChannelUsers(String(channel_id))
+              .then(channelUsers => {
+                console.log('Updated user list:', channelUsers);
+                dispatch(setUsers(channelUsers));
+              })
+              .catch(error => {
+                console.error('Failed to fetch user information:', error);
+              });
+          }
+
           const transformedMessage: StoreMessage = {
             id: String(id),
             content: content,
@@ -199,7 +217,7 @@ const MainLayout: React.FC = () => {
         }
       } else if (message.type === 'presence_update' && message.user_id && message.status) {
         dispatch(updateUserStatus({
-          userId: message.user_id,
+          userId: String(message.user_id),
           status: message.status
         }));
       }
@@ -208,9 +226,9 @@ const MainLayout: React.FC = () => {
     // onMessage returns a cleanup function
     const cleanup = wsService.onMessage(handleMessage);
     return cleanup;
-  }, [dispatch]);
+  }, [dispatch, users]);
 
-  const handleChannelClick = async (channelId: number) => {
+  const handleChannelClick = async (channelId: string) => {
     if (channelId !== activeChannelId) {
       dispatch(setActiveChannel(channelId));
       try {
@@ -240,12 +258,12 @@ const MainLayout: React.FC = () => {
               +New
             </CreateChannelButton>
           </ChannelHeader>
-          {channels.map((channel: any) => (
+          {channels.map((channel: Channel) => (
             <ChannelListItem
               key={channel.id}
               name={channel.name}
               isActive={channel.id === activeChannelId}
-              hasUnread={false}
+              hasUnread={channel.unreadCount > 0}
               isDirect={channel.is_direct_message}
               onClick={() => handleChannelClick(channel.id)}
             />
@@ -253,7 +271,7 @@ const MainLayout: React.FC = () => {
         </ChannelList>
         <UserList>
           <h2>Online Users</h2>
-          {Object.values(users).map((user: any) => (
+          {Object.values(users).map((user) => (
             <UserListItem
               key={user.id}
               username={user.username}
