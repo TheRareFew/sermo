@@ -151,7 +151,8 @@ const SignupForm: React.FC<SignupFormProps> = ({ onLoginClick }) => {
         password: formData.password,
         full_name: formData.full_name,
       });
-      dispatch(signupSuccess(response));
+      const userData = await authService.getCurrentUser();
+      dispatch(signupSuccess({ ...response, user: userData }));
     } catch (error) {
       dispatch(signupFailure(error instanceof Error ? error.message : 'Failed to sign up'));
     }

@@ -7,7 +7,7 @@ import { Channel, User } from '../../../../types';
 import { RootState } from '../../../../store/rootReducer';
 
 const SidebarContainer = styled.div`
-  width: 240px;
+  width: 280px;
   display: flex;
   flex-direction: column;
   background-color: ${props => props.theme.colors.backgroundDark};
@@ -56,6 +56,9 @@ const ChannelItem = styled.div<{ isActive: boolean }>`
   cursor: pointer;
   color: ${props => props.isActive ? props.theme.colors.primary : props.theme.colors.text};
   background-color: ${props => props.isActive ? props.theme.colors.hover : 'transparent'};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
   &:hover {
     background-color: ${props => props.theme.colors.hover};

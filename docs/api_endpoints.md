@@ -135,11 +135,24 @@ Authorization: Bearer <your_jwt_token>
 
 ### Get Channels
 - **GET** `/channels`
-- Returns all channels the current user is a member of
+- Returns channels the current user has access to (public channels and private channels where user is a member)
 - Query Parameters:
   - `skip`: number (default: 0)
   - `limit`: number (default: 100)
+  - `show_public`: boolean (default: true) - If true, includes public channels in addition to member channels
 - Response: Array of Channel objects
+  ```json
+  {
+    "id": "number",
+    "name": "string",
+    "description": "string",
+    "is_direct_message": "boolean",
+    "is_public": "boolean",
+    "created_at": "datetime",
+    "created_by_id": "number",
+    "members": ["number"]
+  }
+  ```
 
 ### Create Channel
 - **POST** `/channels`
@@ -150,24 +163,35 @@ Authorization: Bearer <your_jwt_token>
     "name": "string",
     "description": "string",
     "is_direct_message": "boolean",
-    "member_ids": ["number"]
+    "is_public": "boolean",
+    "member_ids": ["number"] // Required for private channels
   }
   ```
+- Notes:
+  - For private channels (`is_public: false`), `member_ids` must be provided
+  - For public channels (`is_public: true`), `member_ids` is optional
+  - The creator is automatically added as a member
 - Response: Created Channel object
 
 ### Get Channel
 - **GET** `/channels/{channel_id}`
 - Get information about a specific channel
+- Access Control:
+  - Public channels: Accessible by all users
+  - Private channels: Only accessible by channel members
 - Response: Channel object
 
 ### Update Channel
 - **PUT** `/channels/{channel_id}`
 - Update channel information
+- Access Control:
+  - Only the channel creator can update channel settings
 - Request Body:
   ```json
   {
     "name": "string",
-    "description": "string"
+    "description": "string",
+    "is_public": "boolean"
   }
   ```
 - Response: Updated Channel object
@@ -175,6 +199,8 @@ Authorization: Bearer <your_jwt_token>
 ### Delete Channel
 - **DELETE** `/channels/{channel_id}`
 - Delete a channel
+- Access Control:
+  - Only the channel creator can delete the channel
 - Response: 204 No Content
 
 ### Channel Members
@@ -182,6 +208,9 @@ Authorization: Bearer <your_jwt_token>
 #### Add Member
 - **POST** `/channels/{channel_id}/members`
 - Add a member to a channel
+- Access Control:
+  - Only available for private channels
+  - Only current members can add new members
 - Request Body:
   ```json
   {
@@ -193,11 +222,18 @@ Authorization: Bearer <your_jwt_token>
 #### Remove Member
 - **DELETE** `/channels/{channel_id}/members/{user_id}`
 - Remove a member from a channel
+- Access Control:
+  - Only available for private channels
+  - Only the channel creator can remove members
+  - Members can remove themselves
 - Response: 204 No Content
 
 #### Get Members
 - **GET** `/channels/{channel_id}/members`
 - Get list of channel members
+- Access Control:
+  - Only available for private channels
+  - Only current members can view the member list
 - Response: Array of User objects
 
 ## Messages
@@ -413,6 +449,36 @@ Authorization: Bearer <your_jwt_token>
       }
     }
     ```
+
+### Channel Events
+The WebSocket connection handles various channel-related events:
+
+#### Message Events
+- `message`: New message in a channel
+- `channel_access_denied`: User doesn't have access to the channel
+- `error`: General error message
+
+#### Channel Access Events
+- `join_channel`: User joins a channel
+- `leave_channel`: User leaves a channel
+
+#### Error Codes
+- `4001`: Channel access denied
+- `4002`: Authentication failed
+- `1003`: Unsupported operation
+
+### WebSocket Message Format
+```json
+{
+  "type": "string",
+  "content": "string",
+  "channel_id": "string",
+  "code": "string",
+  "sender_id": "string",
+  "created_at": "string",
+  "is_system": "boolean"
+}
+```
 
 ## Error Responses
 All endpoints may return the following error responses:

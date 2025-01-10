@@ -5,6 +5,7 @@ import ChatMessage from '../../common/ChatMessage';
 import { getChannelMessages } from '../../../services/api/chat';
 import { setMessages } from '../../../store/messages/messagesSlice';
 import { Message as ApiMessage, StoreMessage, RootState, User } from '../../../types';
+import wsService from '../../../services/websocket';
 
 const MessageListContainer = styled.div`
   flex: 1;
@@ -87,6 +88,67 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  // Connect to WebSocket when channel changes
+  useEffect(() => {
+    let isMounted = true;
+    let errorHandler: ((error: { code: string; message: string }) => void) | null = null;
+
+    const connectToChannel = async () => {
+      if (!channelId) return;
+
+      setIsConnecting(true);
+      setError(null);
+
+      try {
+        await wsService.connect(channelId);
+        if (isMounted) {
+          setError(null);
+        }
+      } catch (error) {
+        console.error('Failed to connect to channel:', error);
+        if (isMounted) {
+          if (error instanceof Error) {
+            setError(error.message);
+          } else {
+            setError('Failed to connect to channel. Messages may not update in real-time.');
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setIsConnecting(false);
+        }
+      }
+    };
+
+    // Set up WebSocket error handler
+    errorHandler = (error: { code: string; message: string }) => {
+      if (!isMounted) return;
+      
+      console.error('WebSocket error:', error);
+      if (error.code === 'MAX_RECONNECT_ATTEMPTS') {
+        setError('Lost connection to chat. Please refresh the page.');
+      } else if (error.code === 'AUTH_FAILED') {
+        setError('Authentication failed. Please try logging in again.');
+      } else if (error.code === 'CHANNEL_ACCESS_DENIED') {
+        setError('You do not have access to this channel.');
+      } else {
+        setError(error.message || 'Connection error. Messages may not update in real-time.');
+      }
+    };
+
+    wsService.onError(errorHandler);
+    connectToChannel();
+
+    // Cleanup
+    return () => {
+      isMounted = false;
+      if (channelId) {
+        wsService.leaveChannel(channelId);
+      }
+    };
+  }, [channelId]);
 
   const messages = useSelector((state: RootState) => {
     if (!channelId || !state.messages?.messagesByChannel) {
@@ -97,14 +159,18 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
       return [];
     }
     const channelMessages = state.messages.messagesByChannel[String(channelId)] || [];
+    // Sort messages by timestamp, oldest first
+    const sortedMessages = [...channelMessages].sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
     console.log('Selected messages for channel', channelId, ':', {
       channelId,
-      messageCount: channelMessages.length,
-      messages: channelMessages,
+      messageCount: sortedMessages.length,
+      messages: sortedMessages,
       messagesByChannel: state.messages.messagesByChannel,
       stateMessages: state.messages
     });
-    return channelMessages;
+    return sortedMessages;
   });
 
   const users = useSelector((state: RootState) => {
@@ -239,6 +305,12 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
           </ErrorMessage>
         )}
         
+        {isConnecting && (
+          <LoadingMessage>
+            Connecting to chat...
+          </LoadingMessage>
+        )}
+        
         {!hasMoreMessages && messages.length > 0 && (
           <LoadingMessage>
             You've reached the beginning of this conversation
@@ -249,7 +321,7 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
           <LoadingMessage>Loading older messages...</LoadingMessage>
         )}
 
-        {messages.length === 0 && !isLoading && !error && (
+        {messages.length === 0 && !isLoading && !error && !isConnecting && (
           <NoMessagesMessage>
             No messages yet. Start the conversation!
           </NoMessagesMessage>
@@ -257,9 +329,7 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
 
         {messages.map((msg: StoreMessage) => {
           const userId = Number(msg.userId);
-          console.log('Looking up user:', { userId, availableUsers: users });
           const user = users[userId];
-          console.log('Found user:', user);
           const sender = user?.username || `User ${msg.userId}`;
           return (
             <div key={msg.id} id={`message-${msg.id}`} style={{ margin: '4px 0' }}>

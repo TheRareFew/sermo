@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
+from datetime import datetime, UTC
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,6 +18,48 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+def create_test_users(db_session):
+    """Create test users for development"""
+    from .models.user import User
+    from .auth.security import get_password_hash
+    
+    test_users = [
+        {
+            "username": "test_00",
+            "email": "test00@example.com",
+            "full_name": "Test User 00",
+            "password": "1234",
+            "is_active": True
+        },
+        {
+            "username": "test_01",
+            "email": "test01@example.com",
+            "full_name": "Test User 01",
+            "password": "1234",
+            "is_active": True
+        }
+    ]
+    
+    for user_data in test_users:
+        user = User(
+            username=user_data["username"],
+            email=user_data["email"],
+            full_name=user_data["full_name"],
+            hashed_password=get_password_hash(user_data["password"]),
+            is_active=user_data["is_active"],
+            status="offline",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC)
+        )
+        db_session.add(user)
+    
+    try:
+        db_session.commit()
+        print(f"Created test users: {[user['username'] for user in test_users]}")
+    except Exception as e:
+        print(f"Error creating test users: {e}")
+        db_session.rollback()
+
 def init_db():
     """Initialize database tables"""
     # Import all models here to ensure they are registered with SQLAlchemy
@@ -28,9 +71,19 @@ def init_db():
     from .models.reaction import Reaction
     from .auth.security import RefreshToken
     
-    # Drop all tables and recreate them
+    print("Dropping all tables...")
     Base.metadata.drop_all(bind=engine)
+    print("Creating all tables...")
     Base.metadata.create_all(bind=engine)
+    
+    # Create test users
+    print("Creating test users...")
+    db = SessionLocal()
+    try:
+        create_test_users(db)
+    finally:
+        db.close()
+    print("Database initialization complete!")
 
 # Dependency to get DB session
 def get_db():

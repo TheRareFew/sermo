@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import Modal from '../../common/Modal';
 import Input from '../../common/Input';
 import Button from '../../common/Button';
 import { createChannel } from '../../../services/api/chat';
 import { addChannel, setActiveChannel } from '../../../store/chat/chatSlice';
+import { RootState } from '../../../types';
+import Checkbox from '../../common/Checkbox';
+import Select from '../../common/Select';
 
 interface CreateChannelModalProps {
   isOpen: boolean;
@@ -37,12 +40,38 @@ const ButtonGroup = styled.div`
   margin-top: 8px;
 `;
 
+const ToggleGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+`;
+
+const MemberSelection = styled.div`
+  margin-top: 16px;
+`;
+
 const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose }) => {
   const dispatch = useDispatch();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const users = useSelector((state: RootState) => {
+    const userMap = state.chat.users;
+    return Object.values(userMap || {});
+  });
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+
+  const memberOptions = users
+    .filter(user => user?.id !== currentUser?.id)
+    .map(user => ({
+      value: user.id,
+      label: user.username
+    }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,12 +92,17 @@ const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose
       }
 
       // Create channel
-      const newChannel = await createChannel(trimmedName, description.trim() || undefined);
+      const newChannel = await createChannel({
+        name: trimmedName,
+        description: description.trim() || undefined,
+        is_public: isPublic,
+        member_ids: !isPublic ? [currentUser!.id, ...selectedMembers] : undefined
+      });
+      
       dispatch(addChannel(newChannel));
       dispatch(setActiveChannel(newChannel.id));
       onClose();
-      setName('');
-      setDescription('');
+      resetForm();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to create channel');
     } finally {
@@ -76,10 +110,16 @@ const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose
     }
   };
 
-  const handleClose = () => {
+  const resetForm = () => {
     setName('');
     setDescription('');
+    setIsPublic(true);
+    setSelectedMembers([]);
     setError(null);
+  };
+
+  const handleClose = () => {
+    resetForm();
     onClose();
   };
 
@@ -106,6 +146,32 @@ const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose
           placeholder="What's this channel about?"
           fullWidth
         />
+        <ToggleGroup>
+          <Checkbox
+            checked={isPublic}
+            onChange={(e) => setIsPublic(e.target.checked)}
+            label="Public Channel"
+          />
+          <Description style={{ margin: 0, fontSize: '0.9em' }}>
+            {isPublic 
+              ? "Anyone can join this channel"
+              : "Only invited members can join this channel"}
+          </Description>
+        </ToggleGroup>
+        
+        {!isPublic && (
+          <MemberSelection>
+            <Select
+              label="Select Members"
+              options={memberOptions}
+              value={selectedMembers}
+              onChange={(values) => setSelectedMembers(values)}
+              isMulti
+              placeholder="Select members to add..."
+            />
+          </MemberSelection>
+        )}
+
         {error && <ErrorMessage>{error}</ErrorMessage>}
         <ButtonGroup>
           <Button

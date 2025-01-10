@@ -1,5 +1,6 @@
 import { Channel, Message, User } from '../../types';
 import { apiRequest } from './utils';
+import wsService from '../websocket';
 
 interface ApiUser {
   id: string;
@@ -17,6 +18,13 @@ const transformUser = (apiUser: ApiUser): User => ({
   status: apiUser.status || 'offline',
   last_seen: apiUser.last_seen
 });
+
+interface CreateChannelParams {
+  name: string;
+  description?: string;
+  is_public: boolean;
+  member_ids?: string[];
+}
 
 export const getChannels = async (): Promise<Channel[]> => {
   console.log('Fetching channels...');
@@ -80,12 +88,12 @@ export const getChannelUsers = async (channelId: string): Promise<User[]> => {
   }
 };
 
-export const createChannel = async (name: string, description?: string): Promise<Channel> => {
-  console.log('Creating channel:', { name, description });
+export const createChannel = async (params: CreateChannelParams): Promise<Channel> => {
+  console.log('Creating channel:', params);
   try {
     const channel = await apiRequest<Channel>('/channels', {
       method: 'POST',
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify(params),
     });
     console.log('Created channel:', channel);
     return channel;
@@ -98,15 +106,12 @@ export const createChannel = async (name: string, description?: string): Promise
 export const joinChannel = async (channelId: string): Promise<void> => {
   console.log(`Joining channel ${channelId}...`);
   try {
-    // All channels are accessible by default, this is just to sync the user's presence
-    await apiRequest(`/channels/${channelId}/join`, {
-      method: 'POST',
-    });
+    // Join channel through WebSocket
+    await wsService.joinChannel(channelId);
     console.log(`Joined channel ${channelId}`);
   } catch (error) {
-    // Even if joining fails, the user can still view the channel
     console.error(`Error joining channel ${channelId}:`, error);
-    console.warn('User can still view channel messages despite join error');
+    throw error;
   }
 };
 
@@ -119,6 +124,33 @@ export const leaveChannel = async (channelId: string): Promise<void> => {
     console.log(`Left channel ${channelId}`);
   } catch (error) {
     console.error(`Error leaving channel ${channelId}:`, error);
+    throw error;
+  }
+};
+
+export const addChannelMember = async (channelId: string, userId: string): Promise<void> => {
+  console.log(`Adding user ${userId} to channel ${channelId}...`);
+  try {
+    await apiRequest(`/channels/${channelId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    });
+    console.log(`Added user ${userId} to channel ${channelId}`);
+  } catch (error) {
+    console.error(`Error adding member to channel ${channelId}:`, error);
+    throw error;
+  }
+};
+
+export const removeChannelMember = async (channelId: string, userId: string): Promise<void> => {
+  console.log(`Removing user ${userId} from channel ${channelId}...`);
+  try {
+    await apiRequest(`/channels/${channelId}/members/${userId}`, {
+      method: 'DELETE',
+    });
+    console.log(`Removed user ${userId} from channel ${channelId}`);
+  } catch (error) {
+    console.error(`Error removing member from channel ${channelId}:`, error);
     throw error;
   }
 }; 

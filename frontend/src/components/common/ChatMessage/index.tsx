@@ -35,7 +35,7 @@ const formatTime = (timestamp: string): string => {
     console.log('Formatting timestamp:', timestamp);
     
     // Parse the timestamp, assuming UTC if no timezone is specified
-    const date = new Date(timestamp.endsWith('Z') ? timestamp : timestamp + 'Z');
+    const date = new Date(timestamp);
     if (isNaN(date.getTime())) {
       console.error('Invalid timestamp:', timestamp);
       return '--:--:--';

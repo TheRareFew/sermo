@@ -30,7 +30,20 @@ async def get_channel_messages(
         if not channel:
             raise HTTPException(status_code=404, detail="Channel not found")
         
-        if current_user.id not in [member.id for member in channel.members]:
+        # For public channels, automatically add the user as a member if they're not already
+        if channel.is_public and current_user.id not in [m.id for m in channel.members]:
+            try:
+                channel.members.append(current_user)
+                db.commit()
+                db.refresh(channel)
+                logger.info(f"Added user {current_user.id} to public channel {channel_id}")
+            except SQLAlchemyError as e:
+                logger.error(f"Database error while adding member to public channel: {e}")
+                db.rollback()
+                # Continue even if adding fails - they can still view messages in public channels
+        
+        # For private channels, check if user is a member
+        elif not channel.is_public and current_user.id not in [m.id for m in channel.members]:
             raise HTTPException(status_code=403, detail="Not a member of this channel")
 
         # Get messages
@@ -68,7 +81,20 @@ async def create_message(
         if not channel:
             raise HTTPException(status_code=404, detail="Channel not found")
         
-        if current_user.id not in [member.id for member in channel.members]:
+        # For public channels, automatically add the user as a member if they're not already
+        if channel.is_public and current_user.id not in [m.id for m in channel.members]:
+            try:
+                channel.members.append(current_user)
+                db.commit()
+                db.refresh(channel)
+                logger.info(f"Added user {current_user.id} to public channel {channel_id}")
+            except SQLAlchemyError as e:
+                logger.error(f"Database error while adding member to public channel: {e}")
+                db.rollback()
+                # Continue even if adding fails - they can still post in public channels
+        
+        # For private channels, check if user is a member
+        elif not channel.is_public and current_user.id not in [m.id for m in channel.members]:
             raise HTTPException(status_code=403, detail="Not a member of this channel")
 
         # Create message

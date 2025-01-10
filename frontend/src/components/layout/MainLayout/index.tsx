@@ -17,7 +17,9 @@ import MessageInput from '../../chat/MessageInput';
 import MessageList from '../../chat/MessageList';
 import wsService from '../../../services/websocket';
 import { getChannels, getChannelUsers } from '../../../services/api/chat';
-import { RootState, WebSocketMessage, StoreMessage, Channel, User } from '../../../types';
+import { RootState, WebSocketMessage, StoreMessage, Channel, User, WebSocketChannelMessage, WebSocketStatusMessage } from '../../../types';
+import ChannelSettings from '../../chat/ChannelSettings';
+import { AppDispatch } from '../../../store';
 
 const MainContainer = styled.div`
   display: flex;
@@ -118,9 +120,39 @@ const CreateChannelButton = styled(Button)`
   font-size: 0.875rem;
 `;
 
+const ChannelGroup = styled.div`
+  margin-bottom: 16px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const GroupTitle = styled.h3`
+  margin: 0 0 8px 0;
+  padding: 4px 8px;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  color: ${props => props.theme.colors.textLight};
+  border-bottom: 1px solid ${props => props.theme.colors.border};
+  font-family: 'Courier New', monospace;
+`;
+
+const ChannelActions = styled.div`
+  display: flex;
+  gap: 8px;
+`;
+
+const SettingsButton = styled(Button)`
+  padding: 2px 8px;
+  font-size: 0.875rem;
+`;
+
 const MainLayout: React.FC = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   
   const { channels, activeChannelId, users } = useSelector((state: RootState) => ({
     channels: state.chat.channels,
@@ -129,14 +161,13 @@ const MainLayout: React.FC = () => {
   }));
   const activeChannel = channels.find(channel => channel.id === activeChannelId);
 
+  // Initial data fetch
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        // Fetch all channels - all channels are accessible by default
         const fetchedChannels = await getChannels();
         dispatch(setChannels(fetchedChannels));
 
-        // Set the first channel as active if there are any channels
         if (fetchedChannels.length > 0) {
           const channelUsers = await getChannelUsers(fetchedChannels[0].id);
           dispatch(setUsers(channelUsers));
@@ -149,73 +180,112 @@ const MainLayout: React.FC = () => {
 
     fetchInitialData();
     
-    // Connect to WebSocket
-    console.log('Connecting to WebSocket...');
-    wsService.connect();
-
-    // Check WebSocket connection status
-    const checkConnection = setInterval(() => {
-      const wsState = wsService.getChatSocketState();
-      console.log('WebSocket state:', wsState);
-      if (wsState !== WebSocket.OPEN) {
-        console.log('Reconnecting WebSocket...');
-        wsService.connect();
-      }
-    }, 5000);
-
     return () => {
-      clearInterval(checkConnection);
       wsService.disconnect();
     };
   }, [dispatch]);
 
-  // Handle WebSocket messages in a separate useEffect
+  // Handle channel switching and WebSocket connection
   useEffect(() => {
-    const handleMessage = (message: WebSocketMessage) => {
+    let isMounted = true;
+
+    const connectToChannel = async () => {
+      if (!activeChannelId || isConnecting) return;
+
+      setIsConnecting(true);
+      
+      try {
+        // First disconnect from any existing connection
+        wsService.disconnect();
+        
+        // Wait a bit before reconnecting to avoid race conditions
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Connect to the new channel
+        await wsService.connect(activeChannelId);
+        
+        if (!isMounted) return;
+        
+        // After successful connection, join the channel
+        await wsService.joinChannel(activeChannelId);
+        
+        if (!isMounted) return;
+        
+        // After joining, fetch channel users
+        const channelUsers = await getChannelUsers(activeChannelId);
+        if (isMounted) {
+          dispatch(setUsers(channelUsers));
+        }
+      } catch (error) {
+        console.error('Error connecting to channel:', error);
+      } finally {
+        if (isMounted) {
+          setIsConnecting(false);
+        }
+      }
+    };
+
+    if (activeChannelId) {
+      connectToChannel();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeChannelId, dispatch, isConnecting]);
+
+  // Handle WebSocket messages
+  useEffect(() => {
+    const handleWebSocketMessage = (message: WebSocketMessage) => {
       console.log('Received WebSocket message:', message);
       
-      // Handle both new message and message_sent events
-      if ((message.type === 'message' || message.type === 'message_sent') && message.message) {
+      // Handle broadcast messages
+      if (message.type === 'message') {
+        // Type guard to ensure we have a channel message
+        const isChannelMessage = (msg: WebSocketMessage): msg is WebSocketChannelMessage => {
+          return msg.type === 'message' && 'message' in msg;
+        };
+
+        if (!isChannelMessage(message)) {
+          console.error('Invalid message format:', message);
+          return;
+        }
+
         try {
           const { id, content, channel_id, sender_id, created_at } = message.message;
           console.log('Processing message:', { id, content, channel_id, sender_id, created_at });
           
-          if (!id || !content || !channel_id || !sender_id) {
-            console.error('Invalid message format:', message);
+          if (!id || !content || !channel_id || !sender_id || !created_at) {
+            console.error('Invalid message format:', message.message);
             return;
           }
 
-          // Check if we have the sender's information
-          if (!users[sender_id]) {
-            console.log('Fetching information for new user:', sender_id);
-            // Fetch updated user list for the channel
-            getChannelUsers(String(channel_id))
-              .then(channelUsers => {
-                console.log('Updated user list:', channelUsers);
-                dispatch(setUsers(channelUsers));
-              })
-              .catch(error => {
-                console.error('Failed to fetch user information:', error);
-              });
-          }
-
-          const transformedMessage: StoreMessage = {
+          const storeMessage = {
             id: String(id),
-            content: content,
+            content,
             channelId: String(channel_id),
             userId: String(sender_id),
             reactions: [],
             attachments: [],
-            createdAt: created_at || new Date().toISOString(),
-            updatedAt: created_at || new Date().toISOString()
+            createdAt: created_at,
+            updatedAt: created_at
           };
 
-          console.log('Dispatching transformed message:', transformedMessage);
-          dispatch(addMessage(transformedMessage));
+          dispatch(addMessage(storeMessage));
         } catch (error) {
           console.error('Error handling WebSocket message:', error);
         }
-      } else if (message.type === 'presence_update' && message.user_id && message.status) {
+      } else if (message.type === 'user_status') {
+        // Type guard to ensure we have a status message
+        const isStatusMessage = (msg: WebSocketMessage): msg is WebSocketStatusMessage => {
+          return msg.type === 'user_status' && 'user_id' in msg && 'status' in msg;
+        };
+
+        if (!isStatusMessage(message)) {
+          console.error('Invalid status message format:', message);
+          return;
+        }
+
         dispatch(updateUserStatus({
           userId: String(message.user_id),
           status: message.status
@@ -223,26 +293,33 @@ const MainLayout: React.FC = () => {
       }
     };
 
-    // onMessage returns a cleanup function
-    const cleanup = wsService.onMessage(handleMessage);
+    const cleanup = wsService.onMessage(handleWebSocketMessage);
     return cleanup;
-  }, [dispatch, users]);
+  }, [dispatch]);
 
   const handleChannelClick = async (channelId: string) => {
     if (channelId !== activeChannelId) {
       dispatch(setActiveChannel(channelId));
-      try {
-        const channelUsers = await getChannelUsers(channelId);
-        dispatch(setUsers(channelUsers));
-      } catch (error) {
-        console.error('Failed to fetch channel users:', error);
-      }
     }
   };
 
   const handleLogout = () => {
     dispatch(logout());
   };
+
+  // Sort and group channels
+  const sortedChannels = [...channels].sort((a, b) => {
+    // Sort by public/private first
+    if (a.is_public !== b.is_public) {
+      return a.is_public ? -1 : 1;
+    }
+    // Then sort by name
+    return a.name.localeCompare(b.name);
+  });
+
+  const publicChannels = sortedChannels.filter(channel => channel.is_public && !channel.is_direct_message);
+  const privateChannels = sortedChannels.filter(channel => !channel.is_public && !channel.is_direct_message);
+  const directMessages = sortedChannels.filter(channel => channel.is_direct_message);
 
   return (
     <MainContainer>
@@ -258,16 +335,57 @@ const MainLayout: React.FC = () => {
               +New
             </CreateChannelButton>
           </ChannelHeader>
-          {channels.map((channel: Channel) => (
-            <ChannelListItem
-              key={channel.id}
-              name={channel.name}
-              isActive={channel.id === activeChannelId}
-              hasUnread={channel.unreadCount > 0}
-              isDirect={channel.is_direct_message}
-              onClick={() => handleChannelClick(channel.id)}
-            />
-          ))}
+
+          {publicChannels.length > 0 && (
+            <ChannelGroup>
+              <GroupTitle>Public Channels</GroupTitle>
+              {publicChannels.map((channel: Channel) => (
+                <ChannelListItem
+                  key={channel.id}
+                  name={channel.name}
+                  isActive={channel.id === activeChannelId}
+                  hasUnread={channel.unreadCount > 0}
+                  isDirect={channel.is_direct_message}
+                  isPublic={channel.is_public}
+                  onClick={() => handleChannelClick(channel.id)}
+                />
+              ))}
+            </ChannelGroup>
+          )}
+
+          {privateChannels.length > 0 && (
+            <ChannelGroup>
+              <GroupTitle>Private Channels</GroupTitle>
+              {privateChannels.map((channel: Channel) => (
+                <ChannelListItem
+                  key={channel.id}
+                  name={channel.name}
+                  isActive={channel.id === activeChannelId}
+                  hasUnread={channel.unreadCount > 0}
+                  isDirect={channel.is_direct_message}
+                  isPublic={channel.is_public}
+                  onClick={() => handleChannelClick(channel.id)}
+                />
+              ))}
+            </ChannelGroup>
+          )}
+
+          {directMessages.length > 0 && (
+            <ChannelGroup>
+              <GroupTitle>Direct Messages</GroupTitle>
+              {directMessages.map((channel: Channel) => (
+                <ChannelListItem
+                  key={channel.id}
+                  name={channel.name}
+                  isActive={channel.id === activeChannelId}
+                  hasUnread={channel.unreadCount > 0}
+                  isDirect={channel.is_direct_message}
+                  isPublic={channel.is_public}
+                  onClick={() => handleChannelClick(channel.id)}
+                />
+              ))}
+            </ChannelGroup>
+          )}
         </ChannelList>
         <UserList>
           <h2>Online Users</h2>
@@ -283,7 +401,18 @@ const MainLayout: React.FC = () => {
       <ChatArea>
         <ChatHeader>
           <h1>{activeChannel ? `${activeChannel.is_direct_message ? '@' : '#'}${activeChannel.name}` : 'Select a channel'}</h1>
-          <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
+          <ChannelActions>
+            {activeChannel && (
+              <SettingsButton
+                variant="secondary"
+                size="small"
+                onClick={() => setIsSettingsOpen(true)}
+              >
+                Settings
+              </SettingsButton>
+            )}
+            <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
+          </ChannelActions>
         </ChatHeader>
         <MessageList channelId={activeChannelId} />
         <ChatInput>
@@ -294,6 +423,13 @@ const MainLayout: React.FC = () => {
         <CreateChannelModal
           isOpen={isCreateModalOpen}
           onClose={() => setIsCreateModalOpen(false)}
+        />
+      )}
+      {isSettingsOpen && activeChannel && (
+        <ChannelSettings
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          channel={activeChannel}
         />
       )}
     </MainContainer>

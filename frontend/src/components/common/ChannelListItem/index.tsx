@@ -6,6 +6,7 @@ interface ChannelListItemProps {
   isActive: boolean;
   hasUnread: boolean;
   isDirect: boolean;
+  isPublic?: boolean;
   onClick: () => void;
 }
 
@@ -31,10 +32,20 @@ const Prefix = styled.span`
 const ChannelName = styled.span<{ isActive: boolean }>`
   color: ${props => props.isActive ? props.theme.colors.primary : props.theme.colors.text};
   flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 `;
 
 const UnreadIndicator = styled.span`
   color: ${props => props.theme.colors.error};
+  margin-left: 8px;
+`;
+
+const StatusIndicator = styled.span`
+  color: ${props => props.theme.colors.textLight};
+  font-size: 12px;
   margin-left: 8px;
 `;
 
@@ -43,12 +54,18 @@ const ChannelListItem: React.FC<ChannelListItemProps> = ({
   isActive,
   hasUnread,
   isDirect,
+  isPublic = true,
   onClick,
 }) => {
   return (
     <Container isActive={isActive} onClick={onClick}>
       <Prefix>{isDirect ? '@' : '#'}</Prefix>
       <ChannelName isActive={isActive}>{name}</ChannelName>
+      {!isDirect && (
+        <StatusIndicator title={isPublic ? 'Public Channel' : 'Private Channel'}>
+          {isPublic ? '(public)' : '(private)'}
+        </StatusIndicator>
+      )}
       {hasUnread && <UnreadIndicator>*</UnreadIndicator>}
     </Container>
   );

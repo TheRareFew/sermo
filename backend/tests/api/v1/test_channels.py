@@ -412,3 +412,224 @@ def test_create_channel_whitespace_name(test_client: TestClient, test_user: User
     assert response.status_code == 422  # Validation error
     data = response.json()
     assert "name" in str(data["detail"])  # Error should mention the name field 
+
+def test_create_public_channel(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
+    """Test creating a public channel."""
+    headers = {"Authorization": f"Bearer {test_user_token}"}
+    response = test_client.post(
+        "/api/channels",
+        headers=headers,
+        json={
+            "name": "public-channel",
+            "description": "Public channel description",
+            "is_direct_message": False,
+            "is_public": True,
+            "member_ids": []
+        }
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "public-channel"
+    assert data["is_public"] == True
+
+def test_create_private_channel(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
+    """Test creating a private channel."""
+    # Create another user to add as member
+    new_member = User(
+        username="newmember",
+        email="newmember@example.com",
+        full_name="New Member",
+        hashed_password="dummyhash",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
+    )
+    test_db.add(new_member)
+    test_db.commit()
+    test_db.refresh(new_member)
+
+    headers = {"Authorization": f"Bearer {test_user_token}"}
+    response = test_client.post(
+        "/api/channels",
+        headers=headers,
+        json={
+            "name": "private-channel",
+            "description": "Private channel description",
+            "is_direct_message": False,
+            "is_public": False,
+            "member_ids": [new_member.id]
+        }
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "private-channel"
+    assert data["is_public"] == False
+
+def test_create_private_channel_without_members(test_client: TestClient, test_user: User, test_user_token: str):
+    """Test creating a private channel without specifying members."""
+    headers = {"Authorization": f"Bearer {test_user_token}"}
+    response = test_client.post(
+        "/api/channels",
+        headers=headers,
+        json={
+            "name": "private-channel",
+            "description": "Private channel description",
+            "is_direct_message": False,
+            "is_public": False,
+            "member_ids": []
+        }
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert "Private channels must specify member_ids" in data["detail"]
+
+def test_access_public_channel(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
+    """Test accessing a public channel."""
+    # Create another user who owns the channel
+    channel_owner = User(
+        username="owner",
+        email="owner@example.com",
+        full_name="Channel Owner",
+        hashed_password="dummyhash",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
+    )
+    test_db.add(channel_owner)
+    test_db.commit()
+    test_db.refresh(channel_owner)
+
+    # Create a public channel owned by the other user
+    channel = Channel(
+        name="public-channel",
+        description="Public channel description",
+        is_direct_message=False,
+        is_public=True,
+        created_by_id=channel_owner.id,
+        members=[channel_owner]
+    )
+    test_db.add(channel)
+    test_db.commit()
+
+    # Test that our test_user can access the channel
+    headers = {"Authorization": f"Bearer {test_user_token}"}
+    response = test_client.get(f"/api/channels/{channel.id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "public-channel"
+
+def test_access_private_channel_unauthorized(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
+    """Test accessing a private channel without being a member."""
+    # Create another user who owns the channel
+    channel_owner = User(
+        username="owner",
+        email="owner@example.com",
+        full_name="Channel Owner",
+        hashed_password="dummyhash",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
+    )
+    test_db.add(channel_owner)
+    test_db.commit()
+    test_db.refresh(channel_owner)
+
+    # Create a private channel owned by the other user
+    channel = Channel(
+        name="private-channel",
+        description="Private channel description",
+        is_direct_message=False,
+        is_public=False,
+        created_by_id=channel_owner.id,
+        members=[channel_owner]
+    )
+    test_db.add(channel)
+    test_db.commit()
+
+    # Test that our test_user cannot access the channel
+    headers = {"Authorization": f"Bearer {test_user_token}"}
+    response = test_client.get(f"/api/channels/{channel.id}", headers=headers)
+    assert response.status_code == 403
+    data = response.json()
+    assert "Not a member of this private channel" in data["detail"]
+
+def test_manage_members_public_channel(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
+    """Test that member management is not allowed for public channels."""
+    # Create a public channel
+    channel = Channel(
+        name="public-channel",
+        description="Public channel description",
+        is_direct_message=False,
+        is_public=True,
+        created_by_id=test_user.id,
+        members=[test_user]
+    )
+    test_db.add(channel)
+    test_db.commit()
+
+    # Create a user to try to add
+    new_member = User(
+        username="newmember",
+        email="newmember@example.com",
+        full_name="New Member",
+        hashed_password="dummyhash",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
+    )
+    test_db.add(new_member)
+    test_db.commit()
+
+    # Try to add a member to the public channel
+    headers = {"Authorization": f"Bearer {test_user_token}"}
+    response = test_client.post(
+        f"/api/channels/{channel.id}/members",
+        headers=headers,
+        json={"user_id": new_member.id}
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert "Cannot manage members for public channels" in data["detail"]
+
+def test_list_channels_filter(test_client: TestClient, test_user: User, test_user_token: str, test_db: Session):
+    """Test filtering channels by public/private status."""
+    # Create a public channel
+    public_channel = Channel(
+        name="public-channel",
+        description="Public channel description",
+        is_direct_message=False,
+        is_public=True,
+        created_by_id=test_user.id,
+        members=[test_user]
+    )
+    test_db.add(public_channel)
+
+    # Create a private channel
+    private_channel = Channel(
+        name="private-channel",
+        description="Private channel description",
+        is_direct_message=False,
+        is_public=False,
+        created_by_id=test_user.id,
+        members=[test_user]
+    )
+    test_db.add(private_channel)
+    test_db.commit()
+
+    headers = {"Authorization": f"Bearer {test_user_token}"}
+    
+    # Test showing all channels (public and member-only)
+    response = test_client.get("/api/channels?show_public=true", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    channel_names = [c["name"] for c in data]
+    assert "public-channel" in channel_names
+    assert "private-channel" in channel_names
+
+    # Test showing only member channels
+    response = test_client.get("/api/channels?show_public=false", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "private-channel" 

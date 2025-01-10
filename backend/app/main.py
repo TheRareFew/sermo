@@ -3,6 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.v1 import users, channels, messages, files, reactions, search, websockets
 from .auth.router import router as auth_router
 from .database import init_db
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Chat API", version="1.0.0")
 
@@ -12,10 +17,11 @@ init_db()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Include routers
@@ -27,6 +33,9 @@ app.include_router(messages.router, prefix="/api/messages", tags=["messages"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(reactions.router, prefix="/api/messages", tags=["reactions"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
+
+# Mount WebSocket router last to ensure it takes precedence
+logger.debug("Mounting WebSocket router at /ws")
 app.include_router(websockets.router, prefix="/ws", tags=["websockets"])
 
 @app.get("/")

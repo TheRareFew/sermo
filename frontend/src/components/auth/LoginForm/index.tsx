@@ -135,7 +135,8 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSignupClick, onForgotPasswordCl
 
     try {
       const response = await authService.login(formData);
-      dispatch(loginSuccess(response));
+      const userData = await authService.getCurrentUser();
+      dispatch(loginSuccess({ ...response, user: userData }));
     } catch (error) {
       dispatch(loginFailure(error instanceof Error ? error.message : 'Failed to login'));
     }

@@ -1,4 +1,4 @@
-import { AuthResponse, ApiAuthResponse } from '../../types';
+import { AuthResponse, ApiAuthResponse, User } from '../../types';
 import { apiRequest, API_URL } from './utils';
 
 interface LoginCredentials {
@@ -104,5 +104,17 @@ export const isAuthenticated = (): boolean => {
   } catch (error) {
     console.error('Error validating token:', error);
     return false;
+  }
+};
+
+export const getCurrentUser = async (): Promise<User> => {
+  console.log('Fetching current user data...');
+  try {
+    const user = await apiRequest<User>('/users/me');
+    console.log('Received user data:', user);
+    return user;
+  } catch (error) {
+    console.error('Error fetching current user:', error);
+    throw error;
   }
 }; 

@@ -25,14 +25,23 @@ const messagesSlice = createSlice({
         state.messagesByChannel[channelId] = [];
       }
 
-      // Check if message already exists
+      // Check if message already exists by ID
       const existingMessageIndex = state.messagesByChannel[channelId].findIndex(
         (msg: StoreMessage) => msg.id === action.payload.id
       );
 
       if (existingMessageIndex === -1) {
-        // Add new message
+        // Add new message and sort by timestamp
         state.messagesByChannel[channelId].push(action.payload);
+        state.messagesByChannel[channelId].sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      } else {
+        // Update existing message if needed
+        const existingMessage = state.messagesByChannel[channelId][existingMessageIndex];
+        if (existingMessage.updatedAt !== action.payload.updatedAt) {
+          state.messagesByChannel[channelId][existingMessageIndex] = action.payload;
+        }
       }
     },
     updateMessage: (state, action: PayloadAction<{ channelId: string; id: string; message: StoreMessage }>) => {
