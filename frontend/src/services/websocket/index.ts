@@ -2,8 +2,17 @@ import { getAuthToken } from '../api/auth';
 
 const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
 
-interface WebSocketMessage {
+export interface WebSocketMessage {
   type: string;
+  message?: {
+    id: number;
+    content: string;
+    sender_id: number;
+    channel_id: number;
+    created_at: string;
+  };
+  user_id?: number;
+  status?: 'online' | 'offline' | 'away' | 'busy';
   [key: string]: any;
 }
 
@@ -33,12 +42,22 @@ export class WebSocketService {
     }
 
     // Connect to chat WebSocket
-    this.chatSocket = new WebSocket(`${WS_URL}/chat?token=${encodeURIComponent(token)}`);
-    this.setupWebSocketHandlers(this.chatSocket, 'chat');
+    try {
+      this.chatSocket = new WebSocket(`${WS_URL}/chat?token=${encodeURIComponent(token)}`);
+      this.setupWebSocketHandlers(this.chatSocket, 'chat');
+      console.log('Connecting to chat WebSocket...');
+    } catch (error) {
+      console.error('Failed to connect to chat WebSocket:', error);
+    }
 
     // Connect to presence WebSocket
-    this.presenceSocket = new WebSocket(`${WS_URL}/presence?token=${encodeURIComponent(token)}`);
-    this.setupWebSocketHandlers(this.presenceSocket, 'presence');
+    try {
+      this.presenceSocket = new WebSocket(`${WS_URL}/presence?token=${encodeURIComponent(token)}`);
+      this.setupWebSocketHandlers(this.presenceSocket, 'presence');
+      console.log('Connecting to presence WebSocket...');
+    } catch (error) {
+      console.error('Failed to connect to presence WebSocket:', error);
+    }
   }
 
   private setupWebSocketHandlers(socket: WebSocket, type: 'chat' | 'presence'): void {
@@ -95,13 +114,23 @@ export class WebSocketService {
       return;
     }
 
+    if (!channelId || !content.trim()) {
+      console.error('Invalid message parameters:', { channelId, content });
+      return;
+    }
+
     const message = {
       type: 'message',
       channel_id: channelId,
-      content
+      content: content.trim()
     };
 
-    this.chatSocket.send(JSON.stringify(message));
+    try {
+      console.log('Sending message:', message);
+      this.chatSocket.send(JSON.stringify(message));
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
   }
 
   public updateStatus(status: 'online' | 'offline' | 'away' | 'busy'): void {
@@ -168,6 +197,14 @@ export class WebSocketService {
       console.log('Attempting to reconnect WebSocket...');
       this.connect();
     }, this.RECONNECT_DELAY);
+  }
+
+  public getChatSocketState(): number | null {
+    return this.chatSocket?.readyState ?? null;
+  }
+
+  public getPresenceSocketState(): number | null {
+    return this.presenceSocket?.readyState ?? null;
   }
 }
 

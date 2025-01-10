@@ -1,11 +1,10 @@
 import React, { useState, KeyboardEvent } from 'react';
 import styled from 'styled-components';
 import { useDispatch } from 'react-redux';
-import { WebSocketService } from '../../../services/websocket';
+import wsService from '../../../services/websocket';
 
 interface MessageInputProps {
   channelId: number;
-  wsService: WebSocketService;
 }
 
 const InputContainer = styled.div`
@@ -37,14 +36,26 @@ const StyledInput = styled.input`
   }
 `;
 
-const MessageInput: React.FC<MessageInputProps> = ({ channelId, wsService }) => {
+const MessageInput: React.FC<MessageInputProps> = ({ channelId }) => {
   const [message, setMessage] = useState('');
   const dispatch = useDispatch();
 
   const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && message.trim()) {
-      wsService.sendMessage(channelId, message.trim());
-      setMessage('');
+      const wsState = wsService.getChatSocketState();
+      console.log('WebSocket state:', {
+        state: wsState,
+        isConnected: wsState === WebSocket.OPEN,
+        channelId,
+        content: message.trim()
+      });
+      
+      if (wsState === WebSocket.OPEN) {
+        wsService.sendMessage(channelId, message.trim());
+        setMessage('');
+      } else {
+        console.error('WebSocket is not connected. State:', wsState);
+      }
     }
   };
 

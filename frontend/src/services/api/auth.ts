@@ -1,4 +1,4 @@
-import { User, AuthResponse } from '../../types';
+import { AuthResponse, ApiAuthResponse } from '../../types';
 import { apiRequest, API_URL } from './utils';
 
 interface LoginCredentials {
@@ -14,46 +14,20 @@ interface SignupCredentials {
 }
 
 interface ApiError {
-  detail?: string | { msg: string }[];
-  message?: string;
-}
-
-interface ApiAuthResponse {
-  access_token: string;
-  token_type: string;
-  refresh_token: string;
-  user?: {
-    id: number;
-    username: string;
-    email: string;
-    full_name: string;
-  };
+  detail: string;
+  [key: string]: any;
 }
 
 const formatErrorMessage = (error: ApiError): string => {
   if (typeof error.detail === 'string') {
     return error.detail;
   }
-  if (Array.isArray(error.detail)) {
-    return error.detail.map(err => err.msg).join(', ');
-  }
-  if (!error.detail && !error.message) {
-    return 'Please enter both username and password';
-  }
-  return error.message || 'An error occurred';
+  return 'An error occurred during authentication';
 };
 
 const transformAuthResponse = (apiResponse: ApiAuthResponse): AuthResponse => ({
-  user: apiResponse.user || {
-    id: 0,
-    username: '',
-    email: '',
-    full_name: '',
-    status: 'online',
-    last_seen: new Date().toISOString(),
-  },
-  token: apiResponse.access_token,
-  refresh_token: apiResponse.refresh_token,
+  user: apiResponse.user,
+  token: apiResponse.access_token
 });
 
 export const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {

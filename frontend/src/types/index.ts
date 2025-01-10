@@ -1,15 +1,20 @@
 // Auth types
 export interface AuthResponse {
+  token: string;
   user: User;
-  token: string;  // This is the access_token from the backend
-  refresh_token?: string;
 }
 
 export interface ApiAuthResponse {
   access_token: string;
   token_type: string;
-  refresh_token: string;
-  user?: User;
+  user: {
+    id: number;
+    username: string;
+    email: string;
+    full_name: string;
+    status: 'online' | 'offline' | 'away' | 'busy';
+    last_seen: string;
+  };
 }
 
 // User types
@@ -18,8 +23,8 @@ export interface User {
   username: string;
   email: string;
   full_name: string;
-  status?: 'online' | 'offline' | 'away' | 'busy';
-  last_seen?: string;
+  status: 'online' | 'offline' | 'away' | 'busy';
+  last_seen: string;
 }
 
 // Chat types
@@ -35,10 +40,9 @@ export interface Message {
 export interface Channel {
   id: number;
   name: string;
-  description: string | null;
+  description?: string;
   is_direct_message: boolean;
   created_at: string;
-  created_by_id: number;
 }
 
 // State types
@@ -53,7 +57,6 @@ export interface AuthState {
 export interface ChatState {
   activeChannelId: number | null;
   channels: Channel[];
-  messages: { [channelId: number]: Message[] };
   users: { [userId: number]: User };
   loading: boolean;
   error: string | null;
@@ -69,6 +72,33 @@ export interface WebSocketMessage {
   created_at?: string;
   is_system?: boolean;
   user_id?: number;
-  status?: 'online' | 'offline' | 'away' | 'busy';
-  [key: string]: any;
+  status?: User['status'];
+}
+
+// Store Message type
+export interface StoreMessage {
+  id: string;
+  content: string;
+  channelId: string;
+  userId: string;
+  reactions: Reaction[];
+  attachments: Attachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Reaction type
+export interface Reaction {
+  id: string;
+  emoji: string;
+  userId: string;
+}
+
+// Attachment type
+export interface Attachment {
+  id: string;
+  type: 'image' | 'file';
+  url: string;
+  name: string;
+  size: number;
 } 

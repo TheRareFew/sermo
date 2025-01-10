@@ -43,6 +43,8 @@ async def get_channel_messages(
             .limit(limit)
             .all()
         )
+        # Log loaded messages
+        logger.info(f"Loaded {len(messages)} messages from channel {channel_id} (skip={skip}, limit={limit})")
         return messages
 
     except SQLAlchemyError as e:

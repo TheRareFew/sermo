@@ -1,24 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../../../store/auth/authSlice';
 import {
   setActiveChannel,
   setChannels,
-  addMessage,
-  setMessages,
   setUsers,
   updateUserStatus
 } from '../../../store/chat/chatSlice';
+import { addMessage } from '../../../store/messages/messagesSlice';
 import Button from '../../common/Button';
-import ChatMessage from '../../common/ChatMessage';
 import UserListItem from '../../common/UserListItem';
 import ChannelListItem from '../../common/ChannelListItem';
 import CreateChannelModal from '../../chat/CreateChannelModal';
 import MessageInput from '../../chat/MessageInput';
-import wsService from '../../../services/websocket';
-import { getChannels, getChannelMessages, getChannelUsers } from '../../../services/api/chat';
-import { Message, WebSocketMessage } from '../../../types';
+import MessageList from '../../chat/MessageList';
+import wsService, { WebSocketMessage } from '../../../services/websocket';
+import { getChannels, getChannelUsers } from '../../../services/api/chat';
+import { StoreMessage } from '../../../store/types';
 
 const MainContainer = styled.div`
   display: flex;
@@ -65,6 +64,8 @@ const ChatArea = styled.div`
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 `;
 
 const ChatHeader = styled.div`
@@ -80,15 +81,7 @@ const ChatHeader = styled.div`
   }
 `;
 
-const ChatMessages = styled.div`
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-  font-family: 'Courier New', monospace;
-`;
-
 const ChatInput = styled.div`
-  padding: 16px;
   border-top: 2px solid ${props => props.theme.colors.border};
 `;
 
@@ -125,171 +118,91 @@ const CreateChannelButton = styled(Button)`
   font-size: 0.875rem;
 `;
 
-const NoChannelMessage = styled.div`
-  text-align: center;
-  padding: 20px;
-  color: ${props => props.theme.colors.secondary};
-  font-family: 'Courier New', monospace;
-`;
-
-const LoadingMessage = styled.div`
-  text-align: center;
-  padding: 8px;
-  color: ${props => props.theme.colors.textSecondary};
-  font-family: 'Courier New', monospace;
-  font-style: italic;
-`;
-
 const MainLayout: React.FC = () => {
   const dispatch = useDispatch();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreMessages, setHasMoreMessages] = useState(true);
   
   const activeChannelId = useSelector((state: any) => state.chat.activeChannelId);
   const channels = useSelector((state: any) => state.chat.channels);
-  const messages = useSelector((state: any) => state.chat.messages[activeChannelId] || []);
   const users = useSelector((state: any) => state.chat.users);
-
-  const MESSAGES_PER_PAGE = 30;
-
-  // Function to scroll to bottom of messages
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  // Handle scroll to load more messages
-  const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
-    const div = e.currentTarget;
-    if (div.scrollTop === 0 && !isLoadingMore && hasMoreMessages && activeChannelId) {
-      setIsLoadingMore(true);
-      try {
-        const oldestMessageId = messages[0]?.id;
-        const olderMessages = await getChannelMessages(activeChannelId, MESSAGES_PER_PAGE);
-        
-        if (olderMessages.length < MESSAGES_PER_PAGE) {
-          setHasMoreMessages(false);
-        }
-
-        if (olderMessages.length > 0) {
-          // Filter out messages we already have
-          const newMessages = olderMessages.filter(msg => 
-            !messages.some((existing: Message) => existing.id === msg.id)
-          );
-          if (newMessages.length > 0) {
-            dispatch(setMessages({ 
-              channelId: activeChannelId, 
-              messages: [...newMessages, ...messages]
-            }));
-            
-            // Maintain scroll position
-            const currentMessage = document.getElementById(`message-${oldestMessageId}`);
-            currentMessage?.scrollIntoView();
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch older messages:', error);
-      } finally {
-        setIsLoadingMore(false);
-      }
-    }
-  };
+  const activeChannel = channels.find((channel: any) => channel.id === activeChannelId);
 
   useEffect(() => {
-    // Initial data fetch
     const fetchInitialData = async () => {
       try {
-        const channelsData = await getChannels();
-        dispatch(setChannels(channelsData));
-        
-        if (channelsData.length > 0) {
-          const firstChannelId = channelsData[0].id;
-          dispatch(setActiveChannel(firstChannelId));
-          
-          const [messagesData, usersData] = await Promise.all([
-            getChannelMessages(firstChannelId, MESSAGES_PER_PAGE),
-            getChannelUsers(firstChannelId)
-          ]);
-          
-          dispatch(setMessages({ channelId: firstChannelId, messages: messagesData }));
-          dispatch(setUsers(usersData));
-          wsService.joinChannel(firstChannelId);
-          setHasMoreMessages(messagesData.length === MESSAGES_PER_PAGE);
+        const fetchedChannels = await getChannels();
+        dispatch(setChannels(fetchedChannels));
+
+        if (fetchedChannels.length > 0) {
+          const channelUsers = await getChannelUsers(fetchedChannels[0].id);
+          dispatch(setUsers(channelUsers));
+          dispatch(setActiveChannel(fetchedChannels[0].id));
         }
       } catch (error) {
         console.error('Failed to fetch initial data:', error);
       }
     };
 
-    wsService.connect();
     fetchInitialData();
-
-    // WebSocket event handlers
-    const messageHandler = (data: WebSocketMessage) => {
-      if (data.type === 'message' && data.id && data.content && data.sender_id && 
-          data.channel_id && data.created_at) {
-        const message: Message = {
-          id: data.id,
-          content: data.content,
-          sender_id: data.sender_id,
-          channel_id: data.channel_id,
-          created_at: data.created_at,
-          is_system: data.is_system
-        };
-        dispatch(addMessage(message));
-        scrollToBottom();
-      }
-    };
-
-    const presenceHandler = (data: WebSocketMessage) => {
-      if (data.type === 'presence_update' && data.user_id && data.status) {
-        dispatch(updateUserStatus({
-          userId: data.user_id,
-          status: data.status
-        }));
-      }
-    };
-
-    wsService.onMessage(messageHandler);
-    wsService.onPresence(presenceHandler);
+    wsService.connect();
 
     return () => {
       wsService.disconnect();
     };
   }, [dispatch]);
 
+  // Handle WebSocket messages in a separate useEffect
+  useEffect(() => {
+    const handleMessage = (message: WebSocketMessage) => {
+      console.log('Received WebSocket message:', message);
+      
+      if (message.type === 'message' && message.message) {
+        try {
+          const { id, content, channel_id, sender_id, created_at } = message.message;
+          if (!id || !content || !channel_id || !sender_id) {
+            console.error('Invalid message format:', message);
+            return;
+          }
+
+          const transformedMessage: StoreMessage = {
+            id: String(id),
+            content: content,
+            channelId: String(channel_id),
+            userId: String(sender_id),
+            reactions: [],
+            attachments: [],
+            createdAt: created_at || new Date().toISOString(),
+            updatedAt: created_at || new Date().toISOString()
+          };
+
+          console.log('Dispatching transformed message:', transformedMessage);
+          dispatch(addMessage(transformedMessage));
+        } catch (error) {
+          console.error('Error handling WebSocket message:', error);
+        }
+      }
+    };
+
+    // onMessage returns a cleanup function
+    const cleanup = wsService.onMessage(handleMessage);
+    return cleanup;
+  }, [dispatch]);
+
   const handleChannelClick = async (channelId: number) => {
-    if (channelId === activeChannelId) return;
-    
-    dispatch(setActiveChannel(channelId));
-    setHasMoreMessages(true);
-    try {
-      const [messagesData, usersData] = await Promise.all([
-        getChannelMessages(channelId, MESSAGES_PER_PAGE),
-        getChannelUsers(channelId)
-      ]);
-      dispatch(setMessages({ channelId, messages: messagesData }));
-      dispatch(setUsers(usersData));
-      wsService.joinChannel(channelId);
-      setHasMoreMessages(messagesData.length === MESSAGES_PER_PAGE);
-    } catch (error) {
-      console.error('Failed to fetch channel data:', error);
+    if (channelId !== activeChannelId) {
+      dispatch(setActiveChannel(channelId));
+      try {
+        const channelUsers = await getChannelUsers(channelId);
+        dispatch(setUsers(channelUsers));
+      } catch (error) {
+        console.error('Failed to fetch channel users:', error);
+      }
     }
   };
 
-  // Scroll to bottom on initial load and channel change
-  useEffect(() => {
-    scrollToBottom();
-  }, [activeChannelId]);
-
   const handleLogout = () => {
-    wsService.disconnect();
     dispatch(logout());
   };
-
-  const activeChannel = channels.find((c: any) => c.id === activeChannelId);
 
   return (
     <MainContainer>
@@ -310,7 +223,7 @@ const MainLayout: React.FC = () => {
               key={channel.id}
               name={channel.name}
               isActive={channel.id === activeChannelId}
-              hasUnread={false} // TODO: Implement unread tracking
+              hasUnread={false}
               isDirect={channel.is_direct_message}
               onClick={() => handleChannelClick(channel.id)}
             />
@@ -332,51 +245,17 @@ const MainLayout: React.FC = () => {
           <h1>{activeChannel ? `${activeChannel.is_direct_message ? '@' : '#'}${activeChannel.name}` : 'Select a channel'}</h1>
           <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
         </ChatHeader>
-        <ChatMessages ref={messagesContainerRef} onScroll={handleScroll}>
-          {!activeChannel ? (
-            <NoChannelMessage>
-              {channels.length === 0 ? (
-                <>
-                  Welcome to SERMO! Click the "+New" button above to create your first channel.
-                </>
-              ) : (
-                <>
-                  Select a channel from the sidebar to start chatting.
-                </>
-              )}
-            </NoChannelMessage>
-          ) : (
-            <>
-              {isLoadingMore && (
-                <LoadingMessage>Loading older messages...</LoadingMessage>
-              )}
-              {messages.map((msg: Message) => (
-                <div key={msg.id} id={`message-${msg.id}`} style={{ width: '100%' }}>
-                  <ChatMessage
-                    content={msg.content}
-                    sender={users[msg.sender_id]?.username || 'Unknown'}
-                    timestamp={msg.created_at}
-                    isSystem={msg.is_system}
-                  />
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </>
-          )}
-        </ChatMessages>
+        <MessageList channelId={activeChannelId} />
         <ChatInput>
-          {activeChannel && (
-            <MessageInput
-              channelId={activeChannel.id}
-              wsService={wsService}
-            />
-          )}
+          <MessageInput channelId={activeChannelId} />
         </ChatInput>
       </ChatArea>
-      <CreateChannelModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-      />
+      {isCreateModalOpen && (
+        <CreateChannelModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+        />
+      )}
     </MainContainer>
   );
 };

@@ -15,42 +15,70 @@ export async function apiRequest<T>(
   
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
     ...headers,
   };
 
   if (requiresAuth) {
     const token = getAuthToken();
     if (!token) {
+      console.error('No auth token available');
       throw new Error('No auth token available');
     }
     requestHeaders['Authorization'] = `Bearer ${token}`;
-    console.log('Using token for request:', token);
-    console.log('Request headers:', requestHeaders);
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const url = `${API_URL}${endpoint}`;
+  console.log(`Making API request to ${url}`, {
+    method: rest.method || 'GET',
     headers: requestHeaders,
-    credentials: 'include',
-    ...rest,
   });
 
-  console.log('Response status:', response.status);
+  try {
+    const response = await fetch(url, {
+      headers: requestHeaders,
+      credentials: 'include',
+      ...rest,
+    });
 
-  let data;
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    data = await response.json();
-    console.log('Response data:', data);
-  } else {
-    data = await response.text();
-    console.log('Response text:', data);
+    console.log(`Response status for ${endpoint}:`, response.status);
+    console.log(`Response headers for ${endpoint}:`, Object.fromEntries(response.headers.entries()));
+
+    let data;
+    const contentType = response.headers.get('content-type');
+    
+    try {
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+        console.log(`Response data for ${endpoint}:`, JSON.stringify(data, null, 2));
+      } else {
+        data = await response.text();
+        console.log(`Response text for ${endpoint}:`, data);
+        // Try to parse as JSON anyway in case the content-type header is wrong
+        try {
+          data = JSON.parse(data);
+          console.log(`Parsed text response as JSON for ${endpoint}:`, data);
+        } catch {
+          // Not JSON, keep as text
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error(`Error parsing response for ${endpoint}:`, error);
+      throw new Error(`Failed to parse response: ${errorMessage}`);
+    }
+
+    if (!response.ok) {
+      console.error(`API error for ${endpoint}:`, data);
+      throw new Error(typeof data === 'object' ? JSON.stringify(data) : data || 'An error occurred');
+    }
+
+    return data;
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error(`Request failed for ${endpoint}:`, error);
+    throw new Error(`API request failed: ${errorMessage}`);
   }
-
-  if (!response.ok) {
-    throw new Error(data.detail || data || 'An error occurred');
-  }
-
-  return data;
 }
 
 export function getAuthHeaders(): Record<string, string> {

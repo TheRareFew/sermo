@@ -1,10 +1,9 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { ChatState, Message, Channel, User } from '../../types';
+import { ChatState, Channel, User } from '../../types';
 
 const initialState: ChatState = {
   activeChannelId: null,
   channels: [],
-  messages: {},
   users: {},
   loading: false,
   error: null,
@@ -15,35 +14,27 @@ const chatSlice = createSlice({
   initialState,
   reducers: {
     setActiveChannel: (state, action: PayloadAction<number>) => {
+      console.log('Setting active channel:', action.payload);
       state.activeChannelId = action.payload;
     },
     
     setChannels: (state, action: PayloadAction<Channel[]>) => {
+      console.log('Setting channels:', action.payload);
       state.channels = action.payload;
     },
     
     addChannel: (state, action: PayloadAction<Channel>) => {
+      console.log('Adding channel:', action.payload);
       state.channels.push(action.payload);
     },
     
     removeChannel: (state, action: PayloadAction<number>) => {
+      console.log('Removing channel:', action.payload);
       state.channels = state.channels.filter(channel => channel.id !== action.payload);
-      delete state.messages[action.payload];
-    },
-    
-    setMessages: (state, action: PayloadAction<{ channelId: number; messages: Message[] }>) => {
-      state.messages[action.payload.channelId] = action.payload.messages;
-    },
-    
-    addMessage: (state, action: PayloadAction<Message>) => {
-      const channelId = action.payload.channel_id;
-      if (!state.messages[channelId]) {
-        state.messages[channelId] = [];
-      }
-      state.messages[channelId].push(action.payload);
     },
     
     setUsers: (state, action: PayloadAction<User[]>) => {
+      console.log('Setting users:', action.payload);
       const users: { [userId: number]: User } = {};
       action.payload.forEach(user => {
         users[user.id] = user;
@@ -52,6 +43,7 @@ const chatSlice = createSlice({
     },
     
     updateUserStatus: (state, action: PayloadAction<{ userId: number; status: User['status'] }>) => {
+      console.log('Updating user status:', action.payload);
       if (state.users[action.payload.userId]) {
         state.users[action.payload.userId].status = action.payload.status;
         state.users[action.payload.userId].last_seen = new Date().toISOString();
@@ -73,8 +65,6 @@ export const {
   setChannels,
   addChannel,
   removeChannel,
-  setMessages,
-  addMessage,
   setUsers,
   updateUserStatus,
   setLoading,

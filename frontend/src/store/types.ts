@@ -38,19 +38,21 @@ export interface Channel {
 
 // Messages State
 export interface MessagesState {
-  messagesByChannel: Record<string, Message[]>;
+  messagesByChannel: {
+    [channelId: string]: StoreMessage[];
+  };
   loading: boolean;
   error: string | null;
 }
 
-// Message Type
-export interface Message {
+// Store Message Type
+export interface StoreMessage {
   id: string;
   content: string;
   channelId: string;
   userId: string;
-  attachments?: Attachment[];
   reactions: Reaction[];
+  attachments: Attachment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -82,7 +84,16 @@ export interface UsersState {
 // Root State
 export interface RootState {
   auth: AuthState;
-  channels: ChannelsState;
+  chat: ChatState;
   messages: MessagesState;
   users: UsersState;
+}
+
+// Chat State
+export interface ChatState {
+  activeChannelId: number | null;
+  channels: Channel[];
+  users: { [userId: number]: User };
+  loading: boolean;
+  error: string | null;
 } 
