@@ -153,4 +153,17 @@ export const removeChannelMember = async (channelId: string, userId: string): Pr
     console.error(`Error removing member from channel ${channelId}:`, error);
     throw error;
   }
+};
+
+export const deleteMessage = async (messageId: string): Promise<void> => {
+  console.log(`Deleting message ${messageId}...`);
+  try {
+    await apiRequest(`/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+    console.log(`Message ${messageId} deleted successfully`);
+  } catch (error) {
+    console.error(`Error deleting message ${messageId}:`, error);
+    throw error;
+  }
 }; 

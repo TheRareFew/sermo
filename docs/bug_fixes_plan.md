@@ -103,23 +103,3 @@ useEffect(() => {
   return () => wsService.unsubscribe('channel_update');
 }, []);
 ```
-
-## Testing Checklist
-
-1. Channel Creation:
-   - [ ] Create public channel
-   - [ ] Create private channel
-   - [ ] Verify creator permissions
-   - [ ] Verify member permissions
-
-2. Real-time Updates:
-   - [ ] Send messages in different channels
-   - [ ] Create new channels
-   - [ ] Update channel settings
-   - [ ] Test WebSocket reconnection
-
-3. UI Changes:
-   - [ ] Verify channel panel width
-   - [ ] Check text wrapping
-   - [ ] Test member management
-   - [ ] Verify error states 

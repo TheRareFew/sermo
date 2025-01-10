@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { ThemeProvider } from 'styled-components';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import LoginForm from './components/auth/LoginForm';
 import SignupForm from './components/auth/SignupForm';
 import ForgotPassword from './components/auth/ForgotPassword';
@@ -19,32 +21,53 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  if (!isAuthenticated) {
-    return (
-      <ThemeProvider theme={theme}>
-        {currentView === 'login' && (
-          <LoginForm
-            onSignupClick={() => setCurrentView('signup')}
-            onForgotPasswordClick={() => setCurrentView('forgot-password')}
-          />
-        )}
-        {currentView === 'signup' && (
-          <SignupForm
-            onLoginClick={() => setCurrentView('login')}
-          />
-        )}
-        {currentView === 'forgot-password' && (
-          <ForgotPassword
-            onLoginClick={() => setCurrentView('login')}
-          />
-        )}
-      </ThemeProvider>
-    );
-  }
-
   return (
     <ThemeProvider theme={theme}>
-      <MainLayout />
+      {!isAuthenticated ? (
+        <>
+          {currentView === 'login' && (
+            <LoginForm
+              onSignupClick={() => setCurrentView('signup')}
+              onForgotPasswordClick={() => setCurrentView('forgot-password')}
+            />
+          )}
+          {currentView === 'signup' && (
+            <SignupForm
+              onLoginClick={() => setCurrentView('login')}
+            />
+          )}
+          {currentView === 'forgot-password' && (
+            <ForgotPassword
+              onLoginClick={() => setCurrentView('login')}
+            />
+          )}
+        </>
+      ) : (
+        <MainLayout />
+      )}
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable={false}
+        pauseOnHover
+        theme="dark"
+        style={{
+          fontFamily: "'VT323', monospace",
+          fontSize: '1rem'
+        }}
+        toastStyle={{
+          background: theme.colors.background,
+          color: theme.colors.text,
+          border: `2px solid ${theme.colors.border}`,
+          borderRadius: 0,
+          boxShadow: '2px 2px 0 rgba(0, 0, 0, 0.5)'
+        }}
+      />
     </ThemeProvider>
   );
 };

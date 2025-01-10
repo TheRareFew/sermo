@@ -53,17 +53,32 @@ export async function apiRequest<T>(
     
     try {
       if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-        console.log(`Response data for ${endpoint}:`, JSON.stringify(data, null, 2));
+        const text = await response.text();
+        if (!text) {
+          // Handle empty response
+          data = null;
+          console.log(`Empty response for ${endpoint}`);
+        } else {
+          try {
+            data = JSON.parse(text);
+            console.log(`Response data for ${endpoint}:`, JSON.stringify(data, null, 2));
+          } catch (parseError: unknown) {
+            const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown JSON parse error';
+            console.error(`Error parsing JSON response for ${endpoint}:`, parseError);
+            throw new Error(`Failed to parse JSON response: ${errorMessage}`);
+          }
+        }
       } else {
         data = await response.text();
         console.log(`Response text for ${endpoint}:`, data);
         // Try to parse as JSON anyway in case the content-type header is wrong
-        try {
-          data = JSON.parse(data);
-          console.log(`Parsed text response as JSON for ${endpoint}:`, data);
-        } catch {
-          // Not JSON, keep as text
+        if (data) {
+          try {
+            data = JSON.parse(data);
+            console.log(`Parsed text response as JSON for ${endpoint}:`, data);
+          } catch {
+            // Not JSON, keep as text
+          }
         }
       }
     } catch (error: unknown) {

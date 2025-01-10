@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useDispatch, useSelector } from 'react-redux';
 import ChatMessage from '../../common/ChatMessage';
-import { getChannelMessages } from '../../../services/api/chat';
-import { setMessages } from '../../../store/messages/messagesSlice';
+import DeleteMessageModal from '../DeleteMessageModal';
+import { getChannelMessages, deleteMessage as deleteMessageApi } from '../../../services/api/chat';
+import { setMessages, deleteMessage } from '../../../store/messages/messagesSlice';
 import { Message as ApiMessage, StoreMessage, RootState, User } from '../../../types';
 import wsService from '../../../services/websocket';
+import { toast } from 'react-toastify';
 
 const MessageListContainer = styled.div`
   flex: 1;
@@ -89,6 +91,9 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   const [error, setError] = useState<string | null>(null);
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [deletingMessageIds, setDeletingMessageIds] = useState<Set<string>>(new Set());
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Connect to WebSocket when channel changes
   useEffect(() => {
@@ -182,11 +187,52 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
     return allUsers;
   });
 
+  const currentUser = useSelector((state: RootState) => state.auth?.user);
+
   const isLoading = useSelector((state: RootState) => {
     const loading = state.messages?.loading || false;
     console.log('Loading state:', loading);
     return loading;
   });
+
+  const handleDeleteMessage = async (messageId: string) => {
+    setMessageToDelete(messageId);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!channelId || !messageToDelete) return;
+
+    try {
+      setDeletingMessageIds(prev => new Set(prev).add(messageToDelete));
+      await deleteMessageApi(messageToDelete);
+      dispatch(deleteMessage({ channelId, messageId: messageToDelete }));
+      toast.success('Message deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+      if (error instanceof Error) {
+        if (error.message.includes('403')) {
+          toast.error('You are not authorized to delete this message');
+        } else if (error.message.includes('404')) {
+          toast.error('Message not found');
+          // Remove from local state anyway since it doesn't exist
+          dispatch(deleteMessage({ channelId, messageId: messageToDelete }));
+        } else {
+          toast.error('Failed to delete message. Please try again.');
+        }
+      } else {
+        toast.error('An unexpected error occurred');
+      }
+    } finally {
+      setDeletingMessageIds(prev => {
+        const next = new Set(prev);
+        next.delete(messageToDelete);
+        return next;
+      });
+      setMessageToDelete(null);
+      setIsDeleteModalOpen(false);
+    }
+  };
 
   // Initial message load
   useEffect(() => {
@@ -294,56 +340,76 @@ const MessageList: React.FC<MessageListProps> = ({ channelId }) => {
   }
 
   return (
-    <MessageListContainer
-      ref={containerRef}
-      onScroll={handleScroll}
-    >
-      <MessagesWrapper>
-        {error && (
-          <ErrorMessage>
-            {error}
-          </ErrorMessage>
-        )}
-        
-        {isConnecting && (
-          <LoadingMessage>
-            Connecting to chat...
-          </LoadingMessage>
-        )}
-        
-        {!hasMoreMessages && messages.length > 0 && (
-          <LoadingMessage>
-            You've reached the beginning of this conversation
-          </LoadingMessage>
-        )}
-        
-        {isLoadingMore && (
-          <LoadingMessage>Loading older messages...</LoadingMessage>
-        )}
+    <>
+      <MessageListContainer
+        ref={containerRef}
+        onScroll={handleScroll}
+      >
+        <MessagesWrapper>
+          {error && (
+            <ErrorMessage>
+              {error}
+            </ErrorMessage>
+          )}
+          
+          {isConnecting && (
+            <LoadingMessage>
+              Connecting to chat...
+            </LoadingMessage>
+          )}
+          
+          {!hasMoreMessages && messages.length > 0 && (
+            <LoadingMessage>
+              You've reached the beginning of this conversation
+            </LoadingMessage>
+          )}
+          
+          {isLoadingMore && (
+            <LoadingMessage>Loading older messages...</LoadingMessage>
+          )}
 
-        {messages.length === 0 && !isLoading && !error && !isConnecting && (
-          <NoMessagesMessage>
-            No messages yet. Start the conversation!
-          </NoMessagesMessage>
-        )}
+          {messages.length === 0 && !isLoading && !error && !isConnecting && (
+            <NoMessagesMessage>
+              No messages yet. Start the conversation!
+            </NoMessagesMessage>
+          )}
 
-        {messages.map((msg: StoreMessage) => {
-          const userId = Number(msg.userId);
-          const user = users[userId];
-          const sender = user?.username || `User ${msg.userId}`;
-          return (
-            <div key={msg.id} id={`message-${msg.id}`} style={{ margin: '4px 0' }}>
-              <ChatMessage
-                content={msg.content}
-                sender={sender}
-                timestamp={msg.createdAt}
-                isSystem={false}
-              />
-            </div>
-          );
-        })}
-      </MessagesWrapper>
-    </MessageListContainer>
+          {messages.map((msg: StoreMessage) => {
+            const userId = Number(msg.userId);
+            const user = users[userId];
+            const sender = user?.username || `User ${msg.userId}`;
+            const isDeleting = deletingMessageIds.has(msg.id);
+            
+            return (
+              <div key={msg.id} id={`message-${msg.id}`} style={{ 
+                margin: '4px 0',
+                opacity: isDeleting ? 0.5 : 1,
+                pointerEvents: isDeleting ? 'none' as const : 'auto' as const
+              }}>
+                <ChatMessage
+                  content={msg.content}
+                  sender={sender}
+                  timestamp={msg.createdAt}
+                  isSystem={false}
+                  userId={msg.userId}
+                  currentUserId={currentUser?.id?.toString()}
+                  onDelete={() => handleDeleteMessage(msg.id)}
+                />
+              </div>
+            );
+          })}
+        </MessagesWrapper>
+      </MessageListContainer>
+      <DeleteMessageModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setMessageToDelete(null);
+        }}
+        onConfirm={confirmDelete}
+        isDeleting={messageToDelete ? deletingMessageIds.has(messageToDelete) : false}
+      />
+    </>
   );
 };
 
