@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List
+from typing import List, Optional
 import logging
+from datetime import datetime
 
 from ...schemas.reaction import Reaction, ReactionCreate
 from ...models.reaction import Reaction as ReactionModel
@@ -98,10 +99,16 @@ async def remove_reaction(
 @router.get("/{message_id}/reactions", response_model=List[Reaction])
 async def get_reactions(
     message_id: int,
+    since: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get message reactions"""
+    """Get message reactions
+    
+    Args:
+        message_id: ID of the message
+        since: Optional timestamp (in milliseconds) to get reactions after
+    """
     try:
         # Check message exists and user has access
         message = db.query(Message).filter(Message.id == message_id).first()
@@ -120,11 +127,17 @@ async def get_reactions(
                 detail="Not authorized to view reactions in this channel"
             )
 
-        reactions = (
-            db.query(ReactionModel)
-            .filter(ReactionModel.message_id == message_id)
-            .all()
-        )
+        # Build base query
+        query = db.query(ReactionModel).filter(ReactionModel.message_id == message_id)
+
+        # Add since filter if provided
+        if since is not None:
+            since_datetime = datetime.fromtimestamp(since / 1000.0)  # Convert milliseconds to datetime
+            query = query.filter(ReactionModel.created_at > since_datetime)
+            logger.debug(f"Filtering reactions after {since_datetime}")
+
+        reactions = query.order_by(ReactionModel.created_at.desc()).all()
+        logger.info(f"Loaded {len(reactions)} reactions for message {message_id} (since={since})")
         return reactions
 
     except SQLAlchemyError as e:

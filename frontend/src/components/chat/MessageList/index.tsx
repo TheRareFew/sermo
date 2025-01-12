@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, forwardRef, useState, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState, StoreMessage, User, Message as ApiMessage, WebSocketMessage } from '../../../types';
+import { RootState, StoreMessage, User, Message as ApiMessage } from '../../../types';
 import { transformMessage } from '../../../utils/messageTransform';
 import Message from '../Message';
 import MessageReplies from '../MessageReplies';
@@ -10,7 +10,7 @@ import { deleteMessage, toggleExpanded, prependMessages, addMessage, setMessages
 import { deleteMessage as deleteMessageApi, getChannelMessages, createReply, getReplies } from '../../../services/api/chat';
 import { setError } from '../../../store/chat/chatSlice';
 import { toast } from 'react-toastify';
-import wsService from '../../../services/websocket';
+import WebSocketService from '../../../services/websocket';
 
 interface MessageListProps {
   messages: StoreMessage[];
@@ -50,8 +50,8 @@ const MessageWrapper = styled.div<{ $isSelected?: boolean }>`
 const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) => {
   const { messages, selectedMessageId } = props;
   const dispatch = useDispatch();
-  const selectedMessageRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectedMessageRef = useRef<HTMLDivElement>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
@@ -59,12 +59,55 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
   const PAGE_SIZE = 50;
   const scrollLockRef = useRef<{ position: number; height: number } | null>(null);
   const loadedRepliesRef = useRef<Set<string>>(new Set());
+  const lastMessageTimestamp = useRef<number | null>(null);
 
   const { currentUser, users, activeChannelId } = useSelector((state: RootState) => ({
     currentUser: state.auth.user,
     users: state.chat.users as { [key: string]: User },
     activeChannelId: state.chat.activeChannelId
   }));
+
+  // Load initial messages when channel changes
+  useEffect(() => {
+    if (!activeChannelId) return;
+
+    const loadInitialMessages = async () => {
+      try {
+        const messages = await getChannelMessages(activeChannelId, PAGE_SIZE);
+        if (messages.length > 0) {
+          const transformedMessages = messages.map(transformMessage);
+          const organizedMessages = organizeMessagesAndReplies(transformedMessages);
+          dispatch(setMessages({
+            channelId: activeChannelId,
+            messages: organizedMessages
+          }));
+          
+          // Update last message timestamp
+          if (messages.length > 0) {
+            lastMessageTimestamp.current = new Date(messages[messages.length - 1].created_at).getTime();
+          }
+
+          // Connect to WebSocket for this channel
+          WebSocketService.joinChannel(activeChannelId);
+        }
+      } catch (error) {
+        console.error('Error loading initial messages:', error);
+        dispatch(setError('Failed to load messages'));
+      }
+    };
+
+    loadInitialMessages();
+    setPage(0);
+    setHasMore(true);
+    scrollLockRef.current = null;
+
+    // Cleanup: leave the WebSocket channel when component unmounts or channel changes
+    return () => {
+      if (activeChannelId) {
+        WebSocketService.leaveChannel(activeChannelId);
+      }
+    };
+  }, [activeChannelId, dispatch]);
 
   // Sort messages by creation time to ensure newest is at the bottom
   const sortedMessages = useMemo(() => {
@@ -332,107 +375,6 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
       toast.error('Failed to send reply. Please try again.');
     }
   };
-
-  // Add WebSocket message handler
-  useEffect(() => {
-    if (!activeChannelId) return;
-
-    const handleWebSocketMessage = (message: WebSocketMessage) => {
-      console.log('[DEBUG] MessageList received WebSocket message:', message);
-      console.log('[DEBUG] Active channel ID:', activeChannelId);
-      
-      // Check if message is from another channel
-      if (message.data?.channel_id) {
-        const messageChannelId = message.data.channel_id.toString();
-        console.log('[DEBUG] Message channel ID:', messageChannelId);
-        
-        if (messageChannelId && (message.type === 'message' || message.type === 'message_sent' || 
-             message.type === 'new_message' || message.type === 'message_updated') && 
-            messageChannelId !== activeChannelId) {
-          console.log('[DEBUG] Ignoring message from different channel');
-          return; // Ignore messages from other channels
-        }
-      }
-
-      console.log('[DEBUG] Processing message for current channel:', message.type);
-
-      switch (message.type) {
-        case 'message':
-        case 'message_sent':
-        case 'message_updated':
-          if (message.data?.message) {
-            console.log('Processing message:', message);
-            const transformedMessage = transformMessage(message.data.message);
-            console.log('Transformed message:', transformedMessage);
-            
-            if (message.type === 'message_updated') {
-              dispatch(updateMessage({
-                channelId: transformedMessage.channelId,
-                id: transformedMessage.id,
-                message: transformedMessage
-              }));
-            } else {
-              dispatch(addMessage({
-                channelId: transformedMessage.channelId,
-                message: transformedMessage
-              }));
-
-              // Auto-scroll to bottom for new messages
-              requestAnimationFrame(() => {
-                if (containerRef.current) {
-                  containerRef.current.scrollTop = containerRef.current.scrollHeight;
-                }
-              });
-            }
-          }
-          break;
-
-        case 'new_reply':
-          if (message.data?.message && message.data.message.parent_id) {
-            console.log('Processing reply:', message);
-            const transformedReply = transformMessage(message.data.message);
-            console.log('Transformed reply:', transformedReply);
-            
-            dispatch(setReplies({
-              channelId: activeChannelId,
-              messageId: message.data.message.parent_id.toString(),
-              replies: [transformedReply]
-            }));
-
-            // Expand the parent message if it exists
-            const parentId = message.data.message.parent_id.toString();
-            const parentMessage = messages.find(m => m.id === parentId);
-            if (parentMessage && !parentMessage.isExpanded) {
-              dispatch(toggleExpanded({
-                channelId: activeChannelId,
-                messageId: parentId
-              }));
-            }
-          }
-          break;
-
-        case 'message_deleted':
-          if (message.data?.channel_id && message.data.message_id) {
-            console.log('Deleting message:', message.data.channel_id, message.data.message_id);
-            dispatch(deleteMessage({
-              channelId: message.data.channel_id.toString(),
-              messageId: message.data.message_id.toString()
-            }));
-          }
-          break;
-
-        case 'error':
-          if (message.message) {
-            console.error('WebSocket error:', message.message);
-            dispatch(setError('Error processing message from server'));
-          }
-          break;
-      }
-    };
-
-    const unsubscribe = wsService.onMessage(handleWebSocketMessage);
-    return () => unsubscribe();
-  }, [activeChannelId, messages, dispatch]);
 
   return (
     <>

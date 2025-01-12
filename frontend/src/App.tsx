@@ -9,6 +9,7 @@ import ForgotPasswordForm from './components/auth/ForgotPasswordForm';
 import MainLayout from './components/layout/MainLayout';
 import { theme } from './styles/themes/default';
 import { RootState } from './types';
+import WebSocketService from './services/websocket';
 
 const App: React.FC = () => {
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
@@ -18,8 +19,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!isAuthenticated) {
       setCurrentView('login');
+      WebSocketService.disconnect();
+    } else {
+      WebSocketService.connect();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    console.log('API URL:', process.env.REACT_APP_API_URL);
+  }, []);
 
   return (
     <ThemeProvider theme={theme}>

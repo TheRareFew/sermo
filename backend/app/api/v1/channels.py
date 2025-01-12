@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List
+from typing import List, Optional
 import logging
 from datetime import datetime, UTC
 
@@ -20,11 +20,19 @@ logger = logging.getLogger(__name__)
 async def get_channels(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    since: Optional[int] = None,
     skip: int = 0,
     limit: int = 100,
     show_public: bool = True
 ):
-    """Get all channels the current user has access to"""
+    """Get all channels the current user has access to
+    
+    Args:
+        since: Optional timestamp (in milliseconds) to get channels updated after
+        skip: Number of channels to skip (for pagination)
+        limit: Maximum number of channels to return
+        show_public: Whether to include public channels
+    """
     try:
         query = db.query(ChannelModel)
         if show_public:
@@ -37,7 +45,14 @@ async def get_channels(
             # Get only channels where user is a member
             query = query.filter(ChannelModel.members.any(id=current_user.id))
         
-        channels = query.offset(skip).limit(limit).all()
+        # Add since filter if provided
+        if since is not None:
+            since_datetime = datetime.fromtimestamp(since / 1000.0)  # Convert milliseconds to datetime
+            query = query.filter(ChannelModel.updated_at > since_datetime)
+            logger.debug(f"Filtering channels updated after {since_datetime}")
+        
+        channels = query.order_by(ChannelModel.updated_at.desc()).offset(skip).limit(limit).all()
+        logger.info(f"Loaded {len(channels)} channels (since={since}, skip={skip}, limit={limit})")
         return channels
     except SQLAlchemyError as e:
         logger.error(f"Database error while fetching channels: {e}")

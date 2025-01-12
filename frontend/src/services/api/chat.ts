@@ -1,6 +1,5 @@
 import { User, Channel, Message, ApiAuthResponse } from '../../types';
 import { apiRequest } from './utils';
-import wsService from '../websocket';
 
 interface ApiUser {
   id: string;
@@ -113,9 +112,8 @@ export const joinChannel = async (channelId: string): Promise<void> => {
   console.log(`Joining channel ${channelId}...`);
   try {
     // For public channels, we don't need to make an API call
-    // Just join via WebSocket
-    await wsService.joinChannel(channelId);
-    console.log(`Joined channel ${channelId} via WebSocket`);
+    // The backend will automatically add the user when they fetch messages
+    console.log(`Channel ${channelId} joined`);
   } catch (error) {
     console.error(`Error joining channel ${channelId}:`, error);
     throw error;

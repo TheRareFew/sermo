@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List
+from typing import List, Optional
 import logging
 from datetime import datetime
 
@@ -79,17 +79,27 @@ async def get_users(
 
 @router.get("/presence", response_model=List[UserPresence])
 async def get_users_presence(
+    since: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user)
 ):
-    """Get users presence information"""
+    """Get users presence information
+    
+    Args:
+        since: Optional timestamp (in milliseconds) to get presence updates after
+    """
     try:
-        # Get presence info for all active users
-        users = (
-            db.query(UserModel)
-            .filter(UserModel.is_active == True)
-            .all()
-        )
+        # Build base query for active users
+        query = db.query(UserModel).filter(UserModel.is_active == True)
+
+        # Add since filter if provided
+        if since is not None:
+            since_datetime = datetime.fromtimestamp(since / 1000.0)  # Convert milliseconds to datetime
+            query = query.filter(UserModel.last_seen > since_datetime)
+            logger.debug(f"Filtering presence updates after {since_datetime}")
+
+        # Get users
+        users = query.all()
 
         presence_info = [
             UserPresence(
@@ -100,6 +110,8 @@ async def get_users_presence(
             )
             for user in users
         ]
+        
+        logger.info(f"Loaded presence info for {len(users)} users (since={since})")
         return presence_info
 
     except SQLAlchemyError as e:

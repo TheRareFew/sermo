@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List
+from typing import List, Optional
 import logging
 from datetime import datetime
 
@@ -10,6 +10,7 @@ from ...models.message import Message as MessageModel
 from ...models.channel import Channel
 from ..deps import get_db, get_current_user
 from ...models.user import User
+from .websockets import manager
 
 router = APIRouter()
 channel_router = APIRouter()
@@ -18,12 +19,20 @@ logger = logging.getLogger(__name__)
 @channel_router.get("/{channel_id}/messages", response_model=List[Message])
 async def get_channel_messages(
     channel_id: int,
+    since: Optional[int] = None,
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get messages from channel"""
+    """Get messages from channel
+    
+    Args:
+        channel_id: ID of the channel
+        since: Optional timestamp (in milliseconds) to get messages after
+        skip: Number of messages to skip (for pagination)
+        limit: Maximum number of messages to return
+    """
     try:
         # Check channel exists and user has access
         channel = db.query(Channel).filter(Channel.id == channel_id).first()
@@ -33,18 +42,30 @@ async def get_channel_messages(
         if current_user.id not in [member.id for member in channel.members]:
             raise HTTPException(status_code=403, detail="Not authorized to view this channel")
 
-        # Get messages
-        messages = (
+        # Build base query
+        query = (
             db.query(MessageModel)
             .filter(MessageModel.channel_id == channel_id)
             .filter(MessageModel.parent_id.is_(None))  # Only get top-level messages
-            .order_by(MessageModel.created_at.asc())  # Changed to ascending order
+        )
+
+        # Add since filter if provided
+        if since is not None:
+            since_datetime = datetime.fromtimestamp(since / 1000.0)  # Convert milliseconds to datetime
+            query = query.filter(MessageModel.created_at > since_datetime)
+            logger.debug(f"Filtering messages after {since_datetime}")
+
+        # Add ordering and pagination
+        messages = (
+            query
+            .order_by(MessageModel.created_at.asc())
             .offset(skip)
             .limit(limit)
             .all()
         )
+
         # Log loaded messages
-        logger.info(f"Loaded {len(messages)} messages from channel {channel_id} (skip={skip}, limit={limit})")
+        logger.info(f"Loaded {len(messages)} messages from channel {channel_id} (since={since}, skip={skip}, limit={limit})")
         return messages
 
     except SQLAlchemyError as e:
@@ -93,6 +114,15 @@ async def create_message(
         db.add(db_message)
         db.commit()
         db.refresh(db_message)
+        
+        # Refresh to load relationships
+        db_message = db.query(MessageModel).options(
+            joinedload(MessageModel.sender)
+        ).filter(MessageModel.id == db_message.id).first()
+
+        # Broadcast the new message via WebSocket
+        await manager.broadcast_message(channel_id, db_message, exclude_user_id=current_user.id)
+
         return db_message
 
     except SQLAlchemyError as e:
@@ -125,6 +155,14 @@ async def update_message(
         db_message.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(db_message)
+
+        # Broadcast the message update via WebSocket
+        await manager.broadcast_message_update(
+            db_message.channel_id,
+            str(message_id),
+            {"content": message.content, "updated_at": db_message.updated_at.isoformat()}
+        )
+
         return db_message
 
     except SQLAlchemyError as e:
@@ -196,7 +234,7 @@ async def create_message_reply(
     """Create reply to message"""
     try:
         if not reply.content.strip():
-            raise HTTPException(status_code=422, detail="Reply content cannot be empty")
+            raise HTTPException(status_code=422, detail="Message content cannot be empty")
 
         # Check parent message exists and user has access
         parent_message = db.query(MessageModel).filter(MessageModel.id == message_id).first()
@@ -217,6 +255,15 @@ async def create_message_reply(
         db.add(db_reply)
         db.commit()
         db.refresh(db_reply)
+        
+        # Refresh to load relationships
+        db_reply = db.query(MessageModel).options(
+            joinedload(MessageModel.sender)
+        ).filter(MessageModel.id == db_reply.id).first()
+
+        # Broadcast the new reply via WebSocket
+        await manager.broadcast_message(parent_message.channel_id, db_reply, exclude_user_id=current_user.id)
+
         return db_reply
 
     except SQLAlchemyError as e:

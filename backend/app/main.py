@@ -17,9 +17,9 @@ init_db()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
@@ -34,9 +34,9 @@ app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(reactions.router, prefix="/api/messages", tags=["reactions"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 
-# Mount WebSocket router last to ensure it takes precedence
-logger.debug("Mounting WebSocket router at /ws")
-app.include_router(websockets.router, prefix="/ws", tags=["websockets"])
+# Mount WebSocket router without prefix to avoid path duplication
+logger.debug("Mounting WebSocket router")
+app.include_router(websockets.router, tags=["websockets"])
 
 @app.get("/")
 async def root():
