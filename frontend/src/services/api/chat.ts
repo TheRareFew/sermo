@@ -1,4 +1,4 @@
-import { User, Channel, Message, ApiAuthResponse } from '../../types';
+import { User, Channel, Message, ApiAuthResponse, RawReaction } from '../../types';
 import { apiRequest } from './utils';
 import { store } from '../../store';
 
@@ -61,18 +61,37 @@ export const getChannelMessages = async (channelId: string, limit: number = 50, 
     }
 
     const messages = await apiRequest<Message[]>(`/channels/${channelId}/messages?limit=${limit}&skip=${skip}`);
-    console.log('[DEBUG] Raw messages from API:', messages);
+    console.log('[DEBUG] Raw messages from API:', JSON.stringify(messages, null, 2));
 
     // Validate and transform messages
     const validMessages = messages
       .filter(msg => msg && msg.id && msg.content && msg.channel_id && msg.sender_id)
-      .map(msg => ({
-        ...msg,
-        created_at: msg.created_at || new Date().toISOString(),
-        is_system: msg.is_system || false
-      }));
+      .map(msg => {
+        console.log('[DEBUG] Processing message:', {
+          id: msg.id,
+          content: msg.content.slice(0, 50),
+          reactions: msg.reactions,
+          parent_id: msg.parent_id
+        });
+        
+        return {
+          ...msg,
+          created_at: msg.created_at || new Date().toISOString(),
+          is_system: msg.is_system || false,
+          parent_id: msg.parent_id || undefined,
+          reply_count: msg.reply_count || 0,
+          reactions: Array.isArray(msg.reactions) ? msg.reactions.map((r: RawReaction) => ({
+            id: r.id?.toString() || `${msg.id}_${r.user_id || r.userId}_${r.emoji}`,
+            messageId: msg.id.toString(),
+            userId: (r.user_id || r.userId)?.toString() || '',
+            emoji: r.emoji || '',
+            createdAt: r.created_at || r.createdAt || new Date().toISOString()
+          })) : [],
+          attachments: Array.isArray(msg.attachments) ? msg.attachments : []
+        };
+      });
 
-    console.log('[DEBUG] Validated and transformed messages:', validMessages);
+    console.log('[DEBUG] Validated and transformed messages:', JSON.stringify(validMessages, null, 2));
     return validMessages;
   } catch (error) {
     console.error(`[DEBUG] Error fetching messages for channel ${channelId}:`, error);

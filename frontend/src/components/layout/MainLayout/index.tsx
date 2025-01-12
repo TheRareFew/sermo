@@ -15,7 +15,6 @@ import {
 import {
   addMessage,
   setMessages,
-  setReplies,
   deleteMessage,
   updateMessage
 } from '../../../store/messages/messagesSlice';
@@ -194,7 +193,25 @@ const MainLayout: React.FC = () => {
   const lastMessageTimestamp = useRef<number | null>(null);
   const pollingInterval = useRef<NodeJS.Timeout | null>(null);
   const isSearchNavigation = useRef<boolean>(false);
-  
+
+  // Define loadInitialMessages at the very top
+  const loadInitialMessages = useCallback(async (channelId: string) => {
+    try {
+      console.log('Loading initial messages for channel:', channelId);
+      const messages = await getChannelMessages(channelId, 50, 0);
+      if (messages.length > 0) {
+        const transformedMessages = messages.map(transformMessage);
+        dispatch(setMessages({
+          channelId,
+          messages: transformedMessages
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading initial messages:', error);
+      dispatch(setError('Failed to load messages'));
+    }
+  }, [dispatch]);
+
   // Memoize selectors
   const { channels, activeChannelId, users } = useSelector((state: RootState) => ({
     channels: state.chat.channels,
@@ -220,23 +237,33 @@ const MainLayout: React.FC = () => {
     return messages.map(msg => transformMessage(msg));
   }, []);
 
-  // Initialize WebSocket connection
+  // Initialize WebSocket connection and handle channel subscriptions
   useEffect(() => {
-    const user = store.getState().auth.user;
-    const token = store.getState().auth.token;
+    if (!activeChannelId) return;
 
-    if (user && token) {
-      console.log('User is authenticated, connecting to WebSocket');
-      WebSocketService.connect();
-    } else {
-      console.log('User is not authenticated, skipping WebSocket connection');
-    }
-
-    // Cleanup on unmount
+    console.log('Setting up WebSocket for channel:', activeChannelId);
+    
+    // Ensure WebSocket is connected
+    WebSocketService.connect();
+    
+    // Small delay to ensure WebSocket is connected before joining channel
+    const joinTimeout = setTimeout(() => {
+      console.log('Joining channel:', activeChannelId);
+      WebSocketService.joinChannel(activeChannelId);
+      
+      // Load initial messages
+      loadInitialMessages(activeChannelId);
+    }, 500);
+    
+    // Cleanup function
     return () => {
-      WebSocketService.disconnect();
+      clearTimeout(joinTimeout);
+      if (activeChannelId) {
+        console.log('Leaving channel:', activeChannelId);
+        WebSocketService.leaveChannel(activeChannelId);
+      }
     };
-  }, []);
+  }, [activeChannelId, loadInitialMessages]);
 
   // Initial data fetch
   useEffect(() => {
@@ -449,29 +476,44 @@ const MainLayout: React.FC = () => {
     [sortedChannels]
   );
 
-  // Handle channel selection
+  // Update the channel selection handler
   const handleChannelSelect = useCallback(async (channelId: string) => {
-    if (channelId === activeChannelId) return;
-
     try {
-      console.log('[DEBUG] Switching to channel:', channelId);
+      console.log('Selecting channel:', channelId);
+      isChannelSwitching.current = true;
+      setInitialScrollComplete(false);
+      setSelectedMessageId(null);
+      dispatch(setActiveChannel(channelId));
 
-      // Only reset scroll state if not coming from search
-      if (!isSearchNavigation.current) {
-        setInitialScrollComplete(false);
-        setSelectedMessageId(null);
-      }
+      // Fetch channel messages
+      const messages = await getChannelMessages(channelId);
+      console.log('Fetched messages:', messages);
+      
+      const transformedMessages = transformMessagesInChunks(messages);
+      console.log('Transformed messages:', transformedMessages);
+      
+      dispatch(setMessages({
+        channelId,
+        messages: transformedMessages
+      }));
 
-      // Set the active channel - initialization will be handled by the useEffect
-      await dispatch(setActiveChannel(channelId));
+      // Fetch channel users and transform to dictionary
+      const channelUsers = await getChannelUsers(channelId);
+      const usersDict = channelUsers.reduce<{ [key: string]: User }>((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+      }, {});
+      
+      console.log('Transformed users:', usersDict);
+      dispatch(setUsers(usersDict));
 
-      // Clear messages for the new channel
-      dispatch(setMessages({ channelId, messages: [] }));
+      isChannelSwitching.current = false;
     } catch (error) {
-      console.error('[DEBUG] Error switching channels:', error);
-      dispatch(setError('Failed to switch channels. Please try again.'));
+      console.error('Error selecting channel:', error);
+      dispatch(setError('Failed to load channel messages'));
+      isChannelSwitching.current = false;
     }
-  }, [activeChannelId, dispatch]);
+  }, [dispatch, transformMessagesInChunks]);
 
   // Add effect to handle scroll reset on normal channel changes
   useEffect(() => {

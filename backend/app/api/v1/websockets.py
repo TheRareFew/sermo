@@ -247,6 +247,32 @@ class ConnectionManager:
             }
         )
 
+    async def broadcast_reaction(self, channel_id: int, message_id: str, reaction: dict, is_add: bool = True):
+        """Broadcast a reaction update to all users in a channel"""
+        try:
+            message_type = "reaction_added" if is_add else "reaction_removed"
+            
+            message = {
+                "type": message_type,
+                "payload": {
+                    "channelId": str(channel_id),
+                    "messageId": str(message_id),
+                    "reaction": reaction if is_add else {
+                        "userId": str(reaction["userId"]),
+                        "emoji": reaction["emoji"]
+                    }
+                }
+            }
+            
+            logger.debug(f"Broadcasting reaction update - type: {message_type}, message: {message_id}")
+            await self.broadcast_to_channel(
+                channel_id,
+                message
+            )
+        except Exception as e:
+            logger.error(f"Error broadcasting reaction: {str(e)}")
+            raise
+
     def leave_channel(self, channel_id: int, user_id: int):
         try:
             if channel_id in self.channel_members:
@@ -322,6 +348,27 @@ async def websocket_endpoint(
                     if message_type == "leave_channel":
                         channel_id = int(data["channelId"])
                         manager.leave_channel(channel_id, user.id)
+                        continue
+
+                    if message_type == "add_reaction":
+                        channel_id = int(data["channelId"])
+                        message_id = data["messageId"]
+                        reaction = {
+                            "userId": str(user.id),
+                            "emoji": data["emoji"],
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        await manager.broadcast_reaction(channel_id, message_id, reaction, is_add=True)
+                        continue
+
+                    if message_type == "remove_reaction":
+                        channel_id = int(data["channelId"])
+                        message_id = data["messageId"]
+                        reaction = {
+                            "userId": str(user.id),
+                            "emoji": data["emoji"]
+                        }
+                        await manager.broadcast_reaction(channel_id, message_id, reaction, is_add=False)
                         continue
                         
                 except WebSocketDisconnect:

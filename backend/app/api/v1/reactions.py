@@ -11,6 +11,7 @@ from ...models.message import Message
 from ...models.channel import Channel
 from ..deps import get_db, get_current_user
 from ...models.user import User
+from .websockets import manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -59,6 +60,20 @@ async def add_reaction(
         db.add(db_reaction)
         db.commit()
         db.refresh(db_reaction)
+
+        # Broadcast reaction via WebSocket
+        reaction_data = {
+            "userId": str(current_user.id),
+            "emoji": reaction.emoji,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        await manager.broadcast_reaction(
+            channel_id=channel.id,
+            message_id=str(message_id),
+            reaction=reaction_data,
+            is_add=True
+        )
+
         return db_reaction
 
     except SQLAlchemyError as e:
@@ -88,8 +103,27 @@ async def remove_reaction(
         if reaction.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized to remove this reaction")
 
+        # Get channel ID before deleting reaction
+        message = db.query(Message).filter(Message.id == message_id).first()
+        channel_id = message.channel_id
+
+        # Store reaction data before deletion
+        reaction_data = {
+            "userId": str(current_user.id),
+            "emoji": reaction.emoji
+        }
+
+        # Delete reaction
         db.delete(reaction)
         db.commit()
+
+        # Broadcast reaction removal via WebSocket
+        await manager.broadcast_reaction(
+            channel_id=channel_id,
+            message_id=str(message_id),
+            reaction=reaction_data,
+            is_add=False
+        )
 
     except SQLAlchemyError as e:
         logger.error(f"Database error in remove_reaction: {e}")

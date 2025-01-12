@@ -4,9 +4,12 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, StoreMessage, User } from '../../../types';
 import Message, { ChatMessageProps } from '../Message';
 import MessageReplies from '../MessageReplies';
-import { getChannelMessages } from '../../../services/api/chat';
-import { prependMessages } from '../../../store/messages/messagesSlice';
+import ReplyModal from '../ReplyModal';
+import { getChannelMessages, createReply } from '../../../services/api/chat';
+import { prependMessages, addMessage, toggleReplies } from '../../../store/messages/messagesSlice';
 import { transformMessage } from '../../../utils/messageTransform';
+import { addReaction, removeReaction } from '../../../services/api/reactions';
+import { setError } from '../../../store/chat/chatSlice';
 
 interface MessageListProps {
   messages: StoreMessage[];
@@ -70,12 +73,20 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
   const currentChannelRef = useRef<string | null>(messages[0]?.channelId || null);
   const isInitialRender = useRef(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [replyModalOpen, setReplyModalOpen] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<StoreMessage | null>(null);
   const dispatch = useDispatch();
 
   const { currentUser, users } = useSelector((state: RootState) => ({
     currentUser: state.auth.user,
     users: state.chat.users as { [key: string]: User }
   }));
+
+  // Add logging to debug user state
+  useEffect(() => {
+    console.log('Current user state:', currentUser);
+    console.log('Users state:', users);
+  }, [currentUser, users]);
 
   // Cleanup effect
   useEffect(() => {
@@ -281,11 +292,74 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
   };
 
   const handleToggleReplies = (messageId: string) => {
-    console.log('Toggle replies:', messageId);
+    if (!channelId) return;
+    
+    console.log('Toggling replies for message:', messageId);
+    console.log('Current message state:', messages.find(msg => msg.id === messageId));
+    
+    dispatch(toggleReplies({
+      channelId,
+      messageId
+    }));
+
+    // Log state after dispatch
+    setTimeout(() => {
+      console.log('Message state after toggle:', messages.find(msg => msg.id === messageId));
+    }, 0);
   };
 
   const handleReply = (messageId: string) => {
-    console.log('Reply to message:', messageId);
+    const message = messages.find(msg => msg.id === messageId);
+    if (message) {
+      setSelectedMessage(message);
+      setReplyModalOpen(true);
+    }
+  };
+
+  const handleReplySubmit = async (content: string) => {
+    if (selectedMessage && channelId) {
+      try {
+        const reply = await createReply(selectedMessage.id, content);
+        const transformedReply = transformMessage(reply);
+        
+        dispatch(addMessage({ 
+          channelId, 
+          message: {
+            ...transformedReply,
+            parentId: selectedMessage.id,
+            attachments: []
+          }
+        }));
+
+        // Close the modal
+        setReplyModalOpen(false);
+        setSelectedMessage(null);
+      } catch (error) {
+        console.error('Error creating reply:', error);
+      }
+    }
+  };
+
+  const handleReactionAdd = async (messageId: string, emoji: string) => {
+    try {
+      console.log('Adding reaction to message:', messageId, emoji);
+      await addReaction(messageId, emoji);
+      console.log('Reaction added successfully, waiting for WebSocket event');
+    } catch (error) {
+      console.error('Failed to add reaction:', error);
+      dispatch(setError('Failed to add reaction'));
+    }
+  };
+
+  const handleReactionRemove = async (messageId: string, emoji: string) => {
+    try {
+      console.log('Removing reaction from message:', messageId, emoji);
+      await removeReaction(messageId, emoji);
+      console.log('Reaction removed successfully, waiting for WebSocket event');
+    } catch (error) {
+      console.error('Failed to remove reaction:', error);
+      dispatch(setError('Failed to remove reaction'));
+    }
   };
 
   return (
@@ -294,30 +368,38 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
         {isLoadingMore && (
           <LoadingIndicator>Loading older messages...</LoadingIndicator>
         )}
-        {[...messages].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()).map(message => (
+        {[...messages]
+          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+          // Only render main messages (non-replies) in the main list
+          .filter(message => !message.parentId)
+          .map(message => (
           <MessageWrapper
             key={message.id}
             $isSelected={message.id === selectedMessageId}
             data-message-id={message.id}
           >
             <Message
+              id={message.id}
               content={message.content}
               sender={users[message.userId]?.username || message.userId}
               timestamp={message.createdAt}
               userId={message.userId}
-              currentUserId={currentUser?.id}
+              currentUserId={currentUser?.id?.toString()}
               onDelete={() => handleDeleteMessage(message.id)}
               replyCount={message.replyCount || 0}
               isExpanded={message.isExpanded || false}
               onToggleReplies={() => handleToggleReplies(message.id)}
               onReply={() => handleReply(message.id)}
               isReply={false}
+              reactions={message.reactions || []}
+              onReactionAdd={(emoji) => handleReactionAdd(message.id, emoji)}
+              onReactionRemove={(emoji) => handleReactionRemove(message.id, emoji)}
             />
-            {message.isExpanded && message.replies && (
+            {message.isExpanded && (
               <MessageReplies
                 parentId={message.id}
-                replies={message.replies}
-                currentUserId={currentUser?.id}
+                replies={message.replies || []}
+                currentUserId={currentUser?.id?.toString()}
                 isExpanded={message.isExpanded}
                 onToggleReplies={() => handleToggleReplies(message.id)}
                 onDelete={handleDeleteMessage}
@@ -326,6 +408,14 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
           </MessageWrapper>
         ))}
       </MessagesWrapper>
+      {selectedMessage && (
+        <ReplyModal
+          isOpen={replyModalOpen}
+          onClose={() => setReplyModalOpen(false)}
+          onSubmit={handleReplySubmit}
+          parentMessage={selectedMessage}
+        />
+      )}
     </MessageListContainer>
   );
 });

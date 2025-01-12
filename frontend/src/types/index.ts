@@ -22,15 +22,27 @@ export interface Channel {
 }
 
 export interface RawMessage {
-  id: number | string;
+  id: string | number;
   content: string;
-  channel_id: number | string;
-  sender_id: number | string;
-  created_at: string;
+  // Support both camelCase and snake_case
+  channelId?: string;
+  channel_id?: string;
+  userId?: string;
+  sender_id?: string;
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
   updated_at?: string;
-  is_system?: boolean;
-  parent_id?: number | string;
+  parentId?: string | null;
+  parent_id?: string | null;
+  replyCount?: number;
   reply_count?: number;
+  isExpanded?: boolean;
+  repliesLoaded?: boolean;
+  replies?: StoreMessage[];
+  reactions: Reaction[];
+  attachments: any[];
+  user?: User;
 }
 
 export interface Message {
@@ -39,10 +51,12 @@ export interface Message {
   sender_id: string;
   channel_id: string;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
   is_system?: boolean;
   parent_id?: string;
   reply_count?: number;
+  reactions: Reaction[];
+  attachments: Attachment[];
 }
 
 // Store Message type
@@ -72,10 +86,22 @@ export interface Attachment {
 }
 
 // Reaction type
+export interface RawReaction {
+  id?: string | number;
+  user_id?: string | number;
+  userId?: string;
+  emoji?: string;
+  created_at?: string;
+  createdAt?: string;
+  message_id?: string | number;
+}
+
 export interface Reaction {
   id: string;
-  emoji: string;
+  messageId: string;
   userId: string;
+  emoji: string;
+  createdAt: string;
 }
 
 // Auth types
@@ -153,19 +179,23 @@ export type WebSocketMessageType =
   | 'user_status'
   | 'error'
   | 'ping'
-  | 'pong';
+  | 'pong'
+  | 'reaction_added'
+  | 'reaction_removed';
 
 export interface WebSocketMessageData {
   channel_id?: number;
   message_id?: string;
   content?: string;
-  id?: string;
+  id?: string | number;
   user_id?: string;
   status?: UserStatus;
   count?: number;
   message?: RawMessage;
   error?: string;
   parent_id?: string;
+  reaction?: Reaction;
+  emoji?: string;
 }
 
 export interface WebSocketMessage {
