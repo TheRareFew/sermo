@@ -8,6 +8,7 @@ from datetime import datetime
 from ...schemas.message import Message, MessageCreate, MessageUpdate, MessageReply
 from ...models.message import Message as MessageModel
 from ...models.channel import Channel
+from ...models.file import File as FileModel
 from ..deps import get_db, get_current_user
 from ...models.user import User
 from .websockets import manager
@@ -49,7 +50,8 @@ async def get_channel_messages(
             .filter(MessageModel.parent_id.is_(None))  # Only get top-level messages
             .options(
                 joinedload(MessageModel.reactions),
-                joinedload(MessageModel.sender)
+                joinedload(MessageModel.sender),
+                joinedload(MessageModel.files)
             )
         )
 
@@ -118,15 +120,24 @@ async def create_message(
         db_message = MessageModel(
             content=message.content,
             channel_id=channel_id,
-            sender_id=current_user.id
+            sender_id=current_user.id,
+            has_attachments=bool(message.file_ids)
         )
         db.add(db_message)
         db.commit()
         db.refresh(db_message)
         
+        # Update file associations if file_ids provided
+        if message.file_ids:
+            files = db.query(FileModel).filter(FileModel.id.in_(message.file_ids)).all()
+            for file in files:
+                file.message_id = db_message.id
+            db.commit()
+        
         # Refresh to load relationships
         db_message = db.query(MessageModel).options(
-            joinedload(MessageModel.sender)
+            joinedload(MessageModel.sender),
+            joinedload(MessageModel.files)
         ).filter(MessageModel.id == db_message.id).first()
 
         # Broadcast the new message via WebSocket
@@ -224,6 +235,11 @@ async def get_message_replies(
         replies = (
             db.query(MessageModel)
             .filter(MessageModel.parent_id == message_id)
+            .options(
+                joinedload(MessageModel.reactions),
+                joinedload(MessageModel.sender),
+                joinedload(MessageModel.files)
+            )
             .order_by(MessageModel.created_at)
             .all()
         )

@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship, backref
+from sqlalchemy.ext.hybrid import hybrid_property
 from ..database import Base
 from datetime import datetime, UTC
 
@@ -13,6 +14,7 @@ class Message(Base):
     sender_id = Column(Integer, ForeignKey("users.id"))
     channel_id = Column(Integer, ForeignKey("channels.id"))
     parent_id = Column(Integer, ForeignKey("messages.id"), nullable=True)  # For threads/replies
+    has_attachments = Column(Boolean, nullable=False, default=False)  # Ensure column is created with default value
     
     # Relationships
     sender = relationship("User", back_populates="messages")

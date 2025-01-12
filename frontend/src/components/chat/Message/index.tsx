@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import styled from 'styled-components';
 import MessageOptions from '../../chat/MessageOptions';
-import { Reaction } from '../../../types';
+import FilePreview from '../FilePreview';
+import { Reaction, Attachment } from '../../../types';
+import { getMessageFiles } from '../../../services/api/files';
 
 export interface ChatMessageProps {
   id: string;
@@ -19,6 +21,8 @@ export interface ChatMessageProps {
   reactions: Reaction[];
   onReactionAdd?: (emoji: string) => void;
   onReactionRemove?: (emoji: string) => void;
+  attachments?: Attachment[];
+  has_attachments?: boolean;
 }
 
 const MessageContainer = styled.div<{ $isReply?: boolean }>`
@@ -108,6 +112,24 @@ const ReactionCount = styled.span`
   font-size: 0.9em;
 `;
 
+const AttachmentsContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 8px;
+  margin-top: 4px;
+`;
+
+const AttachmentIcon = styled.span`
+  color: #888;
+  margin-left: 4px;
+  cursor: pointer;
+  
+  &:hover {
+    color: #fff;
+  }
+`;
+
 const ChatMessage: React.FC<ChatMessageProps> = ({
   id,
   content,
@@ -124,15 +146,29 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   reactions = [],
   onReactionAdd,
   onReactionRemove,
+  attachments = [],
+  has_attachments = false,
 }) => {
-  console.log('Message props:', {
-    id,
-    content: content.slice(0, 50), // Only log first 50 chars of content
-    sender,
-    userId,
-    currentUserId,
-    reactions
-  });
+  const [showAttachments, setShowAttachments] = useState(false);
+  const [loadedAttachments, setLoadedAttachments] = useState<Attachment[]>(attachments);
+  const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+
+  const handleAttachmentToggle = useCallback(async () => {
+    if (!has_attachments) return;
+
+    setShowAttachments(!showAttachments);
+    if (!showAttachments && loadedAttachments.length === 0) {
+      setIsLoadingAttachments(true);
+      try {
+        const files = await getMessageFiles(id);
+        setLoadedAttachments(files);
+      } catch (error) {
+        console.error('Failed to load attachments:', error);
+      } finally {
+        setIsLoadingAttachments(false);
+      }
+    }
+  }, [id, has_attachments, showAttachments, loadedAttachments.length]);
 
   const formattedTime = new Date(timestamp).toLocaleTimeString([], { 
     hour: '2-digit', 
@@ -145,7 +181,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
   // Group reactions by emoji
   const groupedReactions = (reactions || []).reduce((acc, reaction) => {
-    console.log('Processing reaction:', reaction);
     if (!reaction || !reaction.emoji) {
       console.warn('Invalid reaction:', reaction);
       return acc;
@@ -166,17 +201,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     return acc;
   }, {} as Record<string, { count: number; hasOwn: boolean; users: Set<string> }>);
 
-  console.log('Grouped reactions:', groupedReactions);
-
   const handleReactionClick = async (emoji: string) => {
-    console.log('Reaction clicked:', emoji);
     const reaction = groupedReactions[emoji];
-    console.log('Reaction state:', reaction);
     if (reaction?.hasOwn) {
-      console.log('Removing reaction:', emoji);
       onReactionRemove?.(emoji);
     } else {
-      console.log('Adding reaction:', emoji);
       onReactionAdd?.(emoji);
     }
   };
@@ -184,23 +213,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   return (
     <MessageContainer $isReply={isReply}>
       <MessageContent>
-        <Timestamp>[{formattedTime}]</Timestamp>
-        <Sender>&lt;{sender}&gt;</Sender>
         <MessageText>
-          <span>{content}</span>
-          {!isReply && replyCount > 0 && (
+          <Sender>{sender}</Sender> [{formattedTime}]: {content}
+          {has_attachments && (
+            <AttachmentIcon onClick={handleAttachmentToggle} title="Toggle attachments">
+              📎
+            </AttachmentIcon>
+          )}
+          {replyCount > 0 && (
             <ReplyCount onClick={onToggleReplies}>
-              [{isExpanded ? '-' : '+'} {replyCount}]
+              [{isExpanded ? '-' : '+'} {replyCount} {replyCount === 1 ? 'reply' : 'replies'}]
             </ReplyCount>
           )}
         </MessageText>
         <OptionsWrapper>
-          <MessageOptions 
+          <MessageOptions
             messageId={id}
-            onDelete={onDelete} 
+            onDelete={onDelete}
             onReply={onReply}
             canDelete={isOwnMessage}
-            canReply={!isReply}
+            canReply={true}
             onReactionAdd={onReactionAdd}
             onReactionRemove={onReactionRemove}
           />
@@ -213,13 +245,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               key={emoji}
               onClick={() => handleReactionClick(emoji)}
               $isOwn={hasOwn}
-              title={hasOwn ? 'Click to remove reaction' : 'Click to add reaction'}
+              title={`${hasOwn ? 'Remove' : 'Add'} reaction`}
             >
-              {emoji}
-              <ReactionCount>{count}</ReactionCount>
+              {emoji} <ReactionCount>{count}</ReactionCount>
             </ReactionBadge>
           ))}
         </ReactionsContainer>
+      )}
+      {showAttachments && (
+        <AttachmentsContainer>
+          {isLoadingAttachments ? (
+            <span>Loading attachments...</span>
+          ) : (
+            loadedAttachments.map((attachment) => (
+              <FilePreview
+                key={attachment.id}
+                filename={attachment.filename}
+                fileType={attachment.file_type}
+                filePath={attachment.file_path}
+                fileSize={attachment.file_size}
+                fileId={attachment.id}
+              />
+            ))
+          )}
+        </AttachmentsContainer>
       )}
     </MessageContainer>
   );

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
 
@@ -9,13 +9,13 @@ class FileBase(BaseModel):
     file_path: str
 
 class FileCreate(FileBase):
-    message_id: int
+    message_id: Optional[int] = None
 
 class File(FileBase):
     id: int
+    message_id: Optional[int] = None
+    uploaded_by_id: int
     created_at: datetime
     updated_at: datetime
-    message_id: int
-    uploaded_by_id: int
 
-    model_config = {"from_attributes": True} 
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True) 

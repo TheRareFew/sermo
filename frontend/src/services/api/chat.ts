@@ -30,6 +30,7 @@ interface SendMessageParams {
   content: string;
   channelId: string;
   parentId?: string;
+  fileId?: number;
 }
 
 export const getChannels = async (): Promise<Channel[]> => {
@@ -256,25 +257,24 @@ export const sendMessage = async (params: SendMessageParams): Promise<Message> =
   console.log('Sending message:', params);
   try {
     let endpoint: string;
-    let channelIdToUse = params.channelId;
-
+    
     if (params.parentId) {
-      // If this is a reply, first get the parent message to ensure we use the correct channel
-      const parentMessage = await apiRequest<Message>(`/messages/${params.parentId}`);
-      channelIdToUse = parentMessage.channel_id.toString();
+      // If this is a reply, use the replies endpoint
       endpoint = `/messages/${params.parentId}/replies`;
     } else {
+      // For regular messages, use the channel messages endpoint
       endpoint = `/channels/${params.channelId}/messages`;
     }
 
     const message = await apiRequest<Message>(endpoint, {
       method: 'POST',
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         content: params.content,
-        channel_id: channelIdToUse
+        channel_id: params.channelId,
+        file_ids: params.fileId ? [params.fileId] : undefined
       }),
     });
-
+    console.log('Message sent:', message);
     return message;
   } catch (error) {
     console.error('Error sending message:', error);

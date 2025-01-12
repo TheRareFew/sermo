@@ -1,4 +1,4 @@
-import { RawMessage, StoreMessage, Reaction, Message } from '../types';
+import { RawMessage, StoreMessage, Reaction, Message, Attachment } from '../types';
 
 export const transformMessage = (message: RawMessage | Message): StoreMessage => {
   console.log('Transforming message:', message);
@@ -6,6 +6,20 @@ export const transformMessage = (message: RawMessage | Message): StoreMessage =>
   // Ensure reactions is an array
   const reactions = Array.isArray(message.reactions) ? message.reactions : [];
   console.log('Transformed reactions:', reactions);
+
+  // Transform attachments
+  const transformAttachments = (attachments: any[]): Attachment[] => {
+    return attachments.map(attachment => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      file_type: attachment.file_type,
+      file_path: attachment.file_path,
+      message_id: attachment.message_id,
+      file_size: attachment.file_size || 0,
+      created_at: attachment.created_at || new Date().toISOString(),
+      updated_at: attachment.updated_at || new Date().toISOString()
+    }));
+  };
   
   // Handle both Message and RawMessage types with proper type guards
   const getChannelId = (): string => {
@@ -59,6 +73,7 @@ export const transformMessage = (message: RawMessage | Message): StoreMessage =>
     repliesLoaded: 'repliesLoaded' in message ? !!message.repliesLoaded : false,
     replies: 'replies' in message && Array.isArray(message.replies) ? message.replies : [],
     reactions,
-    attachments: Array.isArray(message.attachments) ? message.attachments : []
+    attachments: Array.isArray(message.attachments) ? transformAttachments(message.attachments) : [],
+    has_attachments: 'has_attachments' in message ? message.has_attachments : false
   };
 }; 

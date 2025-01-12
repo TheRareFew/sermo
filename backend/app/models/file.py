@@ -12,7 +12,7 @@ class File(Base):
     file_type = Column(String)
     file_size = Column(Integer)
     uploaded_by_id = Column(Integer, ForeignKey("users.id"))
-    message_id = Column(Integer, ForeignKey("messages.id"))
+    message_id = Column(Integer, ForeignKey("messages.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 

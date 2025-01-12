@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, UploadFile, File as FastAPIFile, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File as FastAPIFile, HTTPException, status, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from typing import List
+from typing import List, Optional
 import logging
 import os
 from datetime import datetime
@@ -32,36 +33,24 @@ ALLOWED_TYPES = {
 # Create uploads directory if it doesn't exist
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-@router.post("/upload", response_model=File)
+@router.post("/upload", response_model=File, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = FastAPIFile(...),
-    message_id: int = None,
+    message_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Upload a file"""
     try:
-        # Validate file size
-        file_size = 0
-        async with aiofiles.open(file.filename, 'wb') as temp_file:
-            while chunk := await file.read(8192):
-                file_size += len(chunk)
-                if file_size > MAX_FILE_SIZE:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail="File too large"
-                    )
-                await temp_file.write(chunk)
-
-        # Validate file type
+        # Validate file type first
         if file.content_type not in ALLOWED_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="File type not supported"
+                detail=f"File type not supported. Allowed types: {', '.join(ALLOWED_TYPES.keys())}"
             )
 
-        # Verify message exists and user has access
-        if message_id:
+        # Verify message exists and user has access if message_id is provided
+        if message_id is not None:
             message = db.query(Message).filter(Message.id == message_id).first()
             if not message:
                 raise HTTPException(
@@ -71,7 +60,7 @@ async def upload_file(
             
             # Check if user has access to the channel
             channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
-            if current_user.id not in [member.id for member in channel.members]:
+            if not channel or current_user.id not in [member.id for member in channel.members]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to upload to this channel"
@@ -80,12 +69,34 @@ async def upload_file(
         # Generate unique filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         extension = ALLOWED_TYPES[file.content_type]
-        filename = f"{timestamp}_{file.filename.replace(' ', '_')}{extension}"
+        
+        # Remove any existing extension from the original filename
+        original_name = os.path.splitext(file.filename)[0]
+        # Clean the filename
+        safe_original_filename = "".join(c for c in original_name if c.isalnum() or c in "._-")
+        filename = f"{timestamp}_{safe_original_filename}{extension}"
         file_path = os.path.join(UPLOAD_DIR, filename)
 
-        # Save file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Save file and track size
+        file_size = 0
+        try:
+            with open(file_path, "wb") as buffer:
+                while chunk := await file.read(8192):
+                    file_size += len(chunk)
+                    if file_size > MAX_FILE_SIZE:
+                        # Clean up partial file
+                        buffer.close()
+                        os.remove(file_path)
+                        raise HTTPException(
+                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail=f"File too large. Maximum size: {MAX_FILE_SIZE / (1024 * 1024)}MB"
+                        )
+                    buffer.write(chunk)
+        except Exception as e:
+            # Clean up on error
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise e
 
         # Create database entry
         db_file = FileModel(
@@ -93,30 +104,55 @@ async def upload_file(
             file_type=file.content_type,
             file_size=file_size,
             file_path=f"/uploads/{filename}",
-            message_id=message_id,
+            message_id=message_id,  # Can be None
             uploaded_by_id=current_user.id
         )
         
-        db.add(db_file)
-        db.commit()
-        db.refresh(db_file)
-        return db_file
+        try:
+            db.add(db_file)
+            
+            # Update message has_attachments if message_id is provided
+            if message_id:
+                message = db.query(Message).filter(Message.id == message_id).first()
+                if message:
+                    message.has_attachments = True
+            
+            db.commit()
+            db.refresh(db_file)
+            
+            # Convert to response model
+            return File(
+                id=db_file.id,
+                filename=db_file.filename,
+                file_type=db_file.file_type,
+                file_size=db_file.file_size,
+                file_path=db_file.file_path,
+                message_id=db_file.message_id,
+                uploaded_by_id=db_file.uploaded_by_id,
+                created_at=db_file.created_at,
+                updated_at=db_file.updated_at
+            )
+        except SQLAlchemyError as e:
+            # Clean up file if database operation fails
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
 
     except HTTPException as e:
         logger.error(f"Error uploading file: {e.status_code}: {e.detail}")
         raise e
-    except SQLAlchemyError as e:
-        logger.error(f"Database error while uploading file: {e}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not upload file"
-        )
     except Exception as e:
         logger.error(f"Error uploading file: {e}")
+        # Clean up file if it was saved
+        if 'file_path' in locals() and os.path.exists(file_path):
+            os.remove(file_path)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not upload file"
+            detail=str(e)
         )
 
 @router.get("/{file_id}", response_model=File)
@@ -187,6 +223,17 @@ async def delete_file(
 
         # Delete database entry
         db.delete(file)
+        
+        # Update message has_attachments if this was the last file
+        if file.message_id:
+            message = db.query(Message).filter(Message.id == file.message_id).first()
+            if message:
+                remaining_files = db.query(FileModel).filter(
+                    FileModel.message_id == file.message_id,
+                    FileModel.id != file.id
+                ).count()
+                message.has_attachments = remaining_files > 0
+        
         db.commit()
 
     except HTTPException:
@@ -247,4 +294,146 @@ async def get_channel_files(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not fetch channel files"
+        )
+
+@router.patch("/{file_id}", response_model=File)
+async def update_file(
+    file_id: int,
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update file's message ID"""
+    try:
+        # Get the file
+        file = db.query(FileModel).filter(FileModel.id == file_id).first()
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+
+        # Verify the user uploaded this file
+        if file.uploaded_by_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to update this file"
+            )
+
+        # Verify the message exists
+        message = db.query(Message).filter(Message.id == message_id).first()
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
+            )
+
+        # Update the file
+        file.message_id = message_id
+        db.commit()
+        db.refresh(file)
+
+        return file
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error while updating file: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not update file"
+        ) 
+
+@router.get("/messages/{message_id}/files", response_model=List[File])
+async def get_message_files(
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get files attached to a message"""
+    try:
+        # Check if message exists and user has access
+        message = db.query(Message).filter(Message.id == message_id).first()
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
+            )
+
+        # Check if user has access to the channel
+        channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
+        if not channel or current_user.id not in [member.id for member in channel.members]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access these files"
+            )
+
+        # Get files
+        files = db.query(FileModel).filter(FileModel.message_id == message_id).all()
+        return files
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error while fetching message files: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not fetch files"
+        ) 
+
+@router.get("/download/{file_id}")
+async def download_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Download a file"""
+    try:
+        # Get the file
+        file = db.query(FileModel).filter(FileModel.id == file_id).first()
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+
+        # Check if user has access to the channel containing the message
+        message = db.query(Message).filter(Message.id == file.message_id).first()
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Associated message not found"
+            )
+
+        channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
+        if not channel or current_user.id not in [member.id for member in channel.members]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this file"
+            )
+
+        # Get the full file path
+        file_path = os.path.join(UPLOAD_DIR, os.path.basename(file.file_path))
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found on disk"
+            )
+
+        # Return the file as a response with cache control headers
+        headers = {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache"
+        }
+        
+        return FileResponse(
+            path=file_path,
+            filename=file.filename,
+            media_type=file.file_type,
+            headers=headers
+        )
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error while downloading file: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not download file"
         ) 

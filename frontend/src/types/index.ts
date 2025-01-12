@@ -57,6 +57,7 @@ export interface Message {
   reply_count?: number;
   reactions: Reaction[];
   attachments: Attachment[];
+  has_attachments: boolean;
 }
 
 // Store Message type
@@ -74,15 +75,19 @@ export interface StoreMessage {
   isExpanded?: boolean;
   repliesLoaded?: boolean;
   replies?: StoreMessage[];
+  has_attachments: boolean;
 }
 
 // Attachment type
 export interface Attachment {
-  id: string;
-  type: 'image' | 'file';
-  url: string;
-  name: string;
-  size: number;
+  id: number;
+  filename: string;
+  file_type: string;
+  file_path: string;
+  message_id: number;
+  file_size: number;
+  created_at: string;
+  updated_at: string;
 }
 
 // Reaction type

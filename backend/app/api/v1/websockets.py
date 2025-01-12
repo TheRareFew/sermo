@@ -194,7 +194,20 @@ class ConnectionManager:
                 "channelId": str(message.channel_id),
                 "userId": str(message.sender_id),
                 "reactions": [],
-                "attachments": [],
+                "attachments": [
+                    {
+                        "id": str(file.id),
+                        "filename": file.filename,
+                        "file_type": file.file_type,
+                        "file_path": file.file_path,
+                        "file_size": file.file_size,
+                        "message_id": str(message.id),
+                        "created_at": file.created_at.isoformat() if isinstance(file.created_at, datetime) else file.created_at,
+                        "updated_at": file.updated_at.isoformat() if isinstance(file.updated_at, datetime) else file.updated_at
+                    }
+                    for file in message.files
+                ] if message.files else [],
+                "has_attachments": bool(message.files),
                 "createdAt": created_at,
                 "updatedAt": updated_at,
                 "parentId": str(message.parent_id) if message.parent_id else None,

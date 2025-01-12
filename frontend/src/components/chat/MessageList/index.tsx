@@ -362,6 +362,48 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
     }
   };
 
+  const renderMessage = (message: StoreMessage) => {
+    const isSelected = message.id === selectedMessageId;
+    const sender = users[message.userId]?.username || 'Unknown';
+
+    return (
+      <MessageWrapper 
+        key={message.id} 
+        data-message-id={message.id}
+        $isSelected={isSelected}
+      >
+        <Message
+          id={message.id}
+          content={message.content}
+          sender={sender}
+          timestamp={message.createdAt}
+          userId={message.userId}
+          currentUserId={currentUser?.id}
+          onDelete={() => handleDeleteMessage(message.id)}
+          replyCount={message.replyCount || 0}
+          isExpanded={message.isExpanded || false}
+          onToggleReplies={() => handleToggleReplies(message.id)}
+          onReply={() => handleReply(message.id)}
+          reactions={message.reactions || []}
+          onReactionAdd={(emoji) => handleReactionAdd(message.id, emoji)}
+          onReactionRemove={(emoji) => handleReactionRemove(message.id, emoji)}
+          attachments={message.attachments || []}
+          has_attachments={message.has_attachments || false}
+        />
+        {message.isExpanded && (
+          <MessageReplies
+            parentId={message.id}
+            replies={message.replies}
+            currentUserId={currentUser?.id}
+            isExpanded={message.isExpanded}
+            onToggleReplies={() => handleToggleReplies(message.id)}
+            onDelete={handleDeleteMessage}
+          />
+        )}
+      </MessageWrapper>
+    );
+  };
+
   return (
     <MessageListContainer ref={containerRef}>
       <MessagesWrapper>
@@ -372,41 +414,7 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
           .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
           // Only render main messages (non-replies) in the main list
           .filter(message => !message.parentId)
-          .map(message => (
-          <MessageWrapper
-            key={message.id}
-            $isSelected={message.id === selectedMessageId}
-            data-message-id={message.id}
-          >
-            <Message
-              id={message.id}
-              content={message.content}
-              sender={users[message.userId]?.username || message.userId}
-              timestamp={message.createdAt}
-              userId={message.userId}
-              currentUserId={currentUser?.id?.toString()}
-              onDelete={() => handleDeleteMessage(message.id)}
-              replyCount={message.replyCount || 0}
-              isExpanded={message.isExpanded || false}
-              onToggleReplies={() => handleToggleReplies(message.id)}
-              onReply={() => handleReply(message.id)}
-              isReply={false}
-              reactions={message.reactions || []}
-              onReactionAdd={(emoji) => handleReactionAdd(message.id, emoji)}
-              onReactionRemove={(emoji) => handleReactionRemove(message.id, emoji)}
-            />
-            {message.isExpanded && (
-              <MessageReplies
-                parentId={message.id}
-                replies={message.replies || []}
-                currentUserId={currentUser?.id?.toString()}
-                isExpanded={message.isExpanded}
-                onToggleReplies={() => handleToggleReplies(message.id)}
-                onDelete={handleDeleteMessage}
-              />
-            )}
-          </MessageWrapper>
-        ))}
+          .map(renderMessage)}
       </MessagesWrapper>
       {selectedMessage && (
         <ReplyModal
