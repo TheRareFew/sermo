@@ -1,5 +1,6 @@
 import { User, Channel, Message, ApiAuthResponse } from '../../types';
 import { apiRequest } from './utils';
+import { store } from '../../store';
 
 interface ApiUser {
   id: string;
@@ -111,8 +112,22 @@ export const createChannel = async (params: CreateChannelParams): Promise<Channe
 export const joinChannel = async (channelId: string): Promise<void> => {
   console.log(`Joining channel ${channelId}...`);
   try {
-    // For public channels, we don't need to make an API call
-    // The backend will automatically add the user when they fetch messages
+    // Get the current user's ID from the auth state
+    const currentUser = store.getState().auth.user;
+    if (!currentUser) {
+      throw new Error('No authenticated user');
+    }
+
+    const payload = {
+      user_id: currentUser.id
+    };
+    console.log('[DEBUG] Join channel payload:', payload);
+
+    // Add the current user as a member
+    await apiRequest(`/channels/${channelId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
     console.log(`Channel ${channelId} joined`);
   } catch (error) {
     console.error(`Error joining channel ${channelId}:`, error);
@@ -244,6 +259,18 @@ export const sendMessage = async (params: SendMessageParams): Promise<Message> =
     return message;
   } catch (error) {
     console.error('Error sending message:', error);
+    throw error;
+  }
+};
+
+export const getMessagePosition = async (channelId: string, messageId: string): Promise<number> => {
+  console.log(`Getting position for message ${messageId} in channel ${channelId}...`);
+  try {
+    const position = await apiRequest<number>(`/messages/${messageId}/position`);
+    console.log(`Message position:`, position);
+    return position;
+  } catch (error) {
+    console.error(`Error getting message position:`, error);
     throw error;
   }
 }; 

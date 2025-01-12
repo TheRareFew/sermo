@@ -28,7 +28,7 @@ import MessageInput from '../../chat/MessageInput';
 import MessageList from '../../chat/MessageList';
 import SearchBar from '../../common/SearchBar';
 import SearchResults from '../../common/SearchResults';
-import { getChannels, getChannelUsers, getChannelMessages, joinChannel, getReplies } from '../../../services/api/chat';
+import { getChannels, getChannelUsers, getChannelMessages, joinChannel, getReplies, getMessagePosition } from '../../../services/api/chat';
 import { searchAll } from '../../../services/api/search';
 import WebSocketService from '../../../services/websocket';
 import { 
@@ -189,9 +189,11 @@ const MainLayout: React.FC = () => {
   const [searchError, setSearchError] = useState<string | undefined>();
   const messageListRef = useRef<HTMLDivElement>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [initialScrollComplete, setInitialScrollComplete] = useState(false);
   const isChannelSwitching = useRef<boolean>(false);
   const lastMessageTimestamp = useRef<number | null>(null);
   const pollingInterval = useRef<NodeJS.Timeout | null>(null);
+  const isSearchNavigation = useRef<boolean>(false);
   
   // Memoize selectors
   const { channels, activeChannelId, users } = useSelector((state: RootState) => ({
@@ -245,14 +247,9 @@ const MainLayout: React.FC = () => {
         dispatch(setChannels(fetchedChannels));
 
         if (fetchedChannels.length > 0) {
-          const firstChannelId = fetchedChannels[0].id;
-          const channelUsers = await getChannelUsers(firstChannelId);
-          const usersObject = channelUsers.reduce<{ [key: string]: User }>((acc, user) => ({
-            ...acc,
-            [user.id]: user
-          }), {});
-          dispatch(setUsers(usersObject));
-          dispatch(setActiveChannel(firstChannelId));
+          // Find the first public channel or default to first channel
+          const firstPublicChannel = fetchedChannels.find(ch => ch.is_public) || fetchedChannels[0];
+          dispatch(setActiveChannel(firstPublicChannel.id));
         }
       } catch (error) {
         console.error('Failed to fetch initial data:', error);
@@ -269,16 +266,46 @@ const MainLayout: React.FC = () => {
 
     const initializeChannel = async () => {
       try {
-        // Get channel users
-        const channelUsers = await getChannelUsers(activeChannelId);
-        const usersObject = channelUsers.reduce<{ [key: string]: User }>((acc, user) => ({
-          ...acc,
-          [user.id]: user
-        }), {});
-        dispatch(setUsers(usersObject));
+        // Find the channel to check if it's public
+        const channel = channels.find(ch => ch.id === activeChannelId);
+        if (!channel) {
+          throw new Error('Channel not found');
+        }
 
-        // Get initial messages
-        const messages = await getChannelMessages(activeChannelId, PAGE_SIZE);
+        let messages: Message[] = [];
+        let channelUsers: User[] = [];
+
+        // For private channels, ensure we're a member first
+        if (!channel.is_public) {
+          try {
+            await joinChannel(activeChannelId);
+            console.log('[DEBUG] Joined private channel:', activeChannelId);
+          } catch (error) {
+            console.error('[DEBUG] Error joining channel:', error);
+            dispatch(setError('Failed to join channel'));
+            return;
+          }
+        }
+
+        try {
+          // Get initial messages first since they don't require membership
+          messages = await getChannelMessages(activeChannelId, PAGE_SIZE);
+          
+          // Then try to get users
+          channelUsers = await getChannelUsers(activeChannelId);
+          
+          // Update store with users if we got them
+          const usersObject = channelUsers.reduce<{ [key: string]: User }>((acc, user) => ({
+            ...acc,
+            [user.id]: user
+          }), {});
+          dispatch(setUsers(usersObject));
+        } catch (error) {
+          console.error('[DEBUG] Error fetching channel data:', error);
+          // Don't throw here, we might still have messages to show
+        }
+
+        // Update messages if we got any
         if (messages.length > 0) {
           const transformedMessages = transformMessagesInChunks(messages);
           dispatch(setMessages({
@@ -301,7 +328,7 @@ const MainLayout: React.FC = () => {
     return () => {
       WebSocketService.leaveChannel(activeChannelId);
     };
-  }, [activeChannelId, dispatch, transformMessagesInChunks]);
+  }, [activeChannelId, dispatch, transformMessagesInChunks, channels]);
 
   // Handle search
   const handleSearch = async (query: string) => {
@@ -330,16 +357,64 @@ const MainLayout: React.FC = () => {
 
   const handleSelectMessage = async (channelId: string, messageId: string) => {
     try {
-      // Switch to the channel if needed
+      isSearchNavigation.current = true;
+      setSelectedMessageId(null); // Reset selected message first
+      setInitialScrollComplete(false); // Reset scroll state
+
+      // If switching channels
       if (channelId !== activeChannelId) {
-        dispatch(setActiveChannel(channelId));
+        await dispatch(setActiveChannel(channelId));
+        
+        try {
+          // First, try to get the message's position in the channel
+          const messagePosition = await getMessagePosition(channelId, messageId);
+          const batchSize = 50;
+          
+          // Calculate how many messages we need to load to get from the target message to the most recent
+          const totalMessagesToLoad = messagePosition + batchSize; // Add one batch for context before the target
+          const batchesToLoad = Math.ceil(totalMessagesToLoad / batchSize);
+          
+          // Load all messages from position 0 to the target message's position
+          const messagesPromises = Array.from({ length: batchesToLoad }, (_, i) => {
+            const skip = i * batchSize;
+            return getChannelMessages(channelId, batchSize, skip);
+          });
+
+          const messagesBatches = await Promise.all(messagesPromises);
+          const allMessages = messagesBatches.flat();
+          
+          if (allMessages.length > 0) {
+            const transformedMessages = allMessages.map(transformMessage);
+            await dispatch(setMessages({
+              channelId,
+              messages: transformedMessages
+            }));
+          }
+        } catch (error) {
+          console.error('Error loading messages:', error);
+          // Fallback to loading messages around the current time
+          const messages = await getChannelMessages(channelId, 50, 0);
+          if (messages.length > 0) {
+            const transformedMessages = messages.map(transformMessage);
+            await dispatch(setMessages({
+              channelId,
+              messages: transformedMessages
+            }));
+          }
+        }
       }
 
-      // Set the selected message
-      setSelectedMessageId(messageId);
-      setSearchResults(null);
+      // Small delay to ensure messages are rendered before scrolling
+      setTimeout(() => {
+        setSelectedMessageId(messageId);
+        setSearchResults(null);
+        isSearchNavigation.current = false;
+      }, 100);
+      
     } catch (error) {
       console.error('Error selecting message:', error);
+      dispatch(setError('Failed to navigate to message'));
+      isSearchNavigation.current = false;
     }
   };
 
@@ -381,18 +456,30 @@ const MainLayout: React.FC = () => {
     try {
       console.log('[DEBUG] Switching to channel:', channelId);
 
-      // Set the active channel
-      dispatch(setActiveChannel(channelId));
+      // Only reset scroll state if not coming from search
+      if (!isSearchNavigation.current) {
+        setInitialScrollComplete(false);
+        setSelectedMessageId(null);
+      }
+
+      // Set the active channel - initialization will be handled by the useEffect
+      await dispatch(setActiveChannel(channelId));
 
       // Clear messages for the new channel
       dispatch(setMessages({ channelId, messages: [] }));
-
-      // The rest of the initialization will be handled by the useEffect
     } catch (error) {
       console.error('[DEBUG] Error switching channels:', error);
       dispatch(setError('Failed to switch channels. Please try again.'));
     }
   }, [activeChannelId, dispatch]);
+
+  // Add effect to handle scroll reset on normal channel changes
+  useEffect(() => {
+    if (!isSearchNavigation.current && activeChannelId) {
+      setInitialScrollComplete(false);
+      setSelectedMessageId(null);
+    }
+  }, [activeChannelId]);
 
   return (
     <MainContainer>
@@ -480,16 +567,9 @@ const MainLayout: React.FC = () => {
                       results={searchResults}
                       isLoading={isSearching}
                       onClose={() => setSearchResults(null)}
-                      onSelectChannel={(channelId) => {
-                        dispatch(setActiveChannel(channelId));
-                        setSearchResults(null);
-                      }}
+                      onSelectChannel={handleSelectChannel}
                       onSelectMessage={handleSelectMessage}
-                      onSelectFile={(fileId) => {
-                        // TODO: Implement file selection
-                        console.log('Selected file:', fileId);
-                        setSearchResults(null);
-                      }}
+                      onSelectFile={handleSelectFile}
                     />
                   )}
                 </SearchContainer>
@@ -508,6 +588,8 @@ const MainLayout: React.FC = () => {
           ref={messageListRef}
           messages={channelMessages}
           selectedMessageId={selectedMessageId}
+          initialScrollComplete={initialScrollComplete}
+          channelId={activeChannelId}
         />
         
         <ChatInput>

@@ -72,6 +72,21 @@ const LoadingText = styled.div`
   color: #888;
 `;
 
+const MessageResult = styled(ResultItem)`
+  border-left: 2px solid transparent;
+  
+  &:hover {
+    border-left-color: ${props => props.theme.colors.primary};
+  }
+`;
+
+const MessageContent = styled(ResultContent)`
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+`;
+
 const SearchResults: React.FC<SearchResultsProps> = ({
   results,
   isLoading,
@@ -100,32 +115,15 @@ const SearchResults: React.FC<SearchResultsProps> = ({
     );
   }
 
-  const handleChannelClick = (channel: ChannelSearchResult) => {
-    onSelectChannel(channel.id);
-    onClose();
-  };
-
-  const handleMessageClick = (message: MessageSearchResult) => {
-    onSelectMessage(message.channel_id, message.id);
-    onClose();
-  };
-
-  const handleFileClick = (file: FileSearchResult) => {
-    onSelectFile(file.id);
-    onClose();
-  };
-
   return (
     <ResultsContainer>
       {results.channels.length > 0 && (
         <Section>
           <SectionTitle>Channels</SectionTitle>
-          {results.channels.map(channel => (
-            <ResultItem key={channel.id} onClick={() => handleChannelClick(channel)}>
-              <ResultTitle>#{channel.name}</ResultTitle>
-              {channel.description && (
-                <ResultContent>{channel.description}</ResultContent>
-              )}
+          {results.channels.map((channel: ChannelSearchResult) => (
+            <ResultItem key={channel.id} onClick={() => onSelectChannel(channel.id)}>
+              <ResultTitle># {channel.name}</ResultTitle>
+              <ResultContent>{channel.description || 'No description'}</ResultContent>
             </ResultItem>
           ))}
         </Section>
@@ -134,11 +132,19 @@ const SearchResults: React.FC<SearchResultsProps> = ({
       {results.messages.length > 0 && (
         <Section>
           <SectionTitle>Messages</SectionTitle>
-          {results.messages.map(message => (
-            <ResultItem key={message.id} onClick={() => handleMessageClick(message)}>
-              <ResultTitle>#{message.channel_name}</ResultTitle>
-              <ResultContent>{message.content}</ResultContent>
-            </ResultItem>
+          {results.messages.map((message: MessageSearchResult) => (
+            <MessageResult
+              key={message.id}
+              onClick={() => onSelectMessage(message.channel_id, message.id)}
+              title="Click to view in channel"
+            >
+              <ResultTitle>
+                {message.channel_name ? `#${message.channel_name}` : 'Unknown Channel'}
+              </ResultTitle>
+              <MessageContent>
+                <strong>{message.sender_id || 'Unknown User'}:</strong> {message.content}
+              </MessageContent>
+            </MessageResult>
           ))}
         </Section>
       )}
@@ -146,10 +152,10 @@ const SearchResults: React.FC<SearchResultsProps> = ({
       {results.files.length > 0 && (
         <Section>
           <SectionTitle>Files</SectionTitle>
-          {results.files.map(file => (
-            <ResultItem key={file.id} onClick={() => handleFileClick(file)}>
+          {results.files.map((file: FileSearchResult) => (
+            <ResultItem key={file.id} onClick={() => onSelectFile(file.id)}>
               <ResultTitle>{file.filename}</ResultTitle>
-              <ResultContent>#{file.channel_name}</ResultContent>
+              <ResultContent>{file.file_type} - {file.file_path}</ResultContent>
             </ResultItem>
           ))}
         </Section>

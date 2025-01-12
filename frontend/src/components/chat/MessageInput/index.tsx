@@ -1,4 +1,4 @@
-import React, { useState, KeyboardEvent } from 'react';
+import React, { useState, KeyboardEvent, useRef, useLayoutEffect, useEffect } from 'react';
 import styled from 'styled-components';
 import { useDispatch } from 'react-redux';
 import { addMessage } from '../../../store/messages/messagesSlice';
@@ -42,6 +42,25 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }) => {
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [messageSent, setMessageSent] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useLayoutEffect(() => {
+    if (channelId && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [channelId]);
+
+  useEffect(() => {
+    if (messageSent) {
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+        setMessageSent(false);
+      }, 100);
+    }
+  }, [messageSent]);
 
   const handleKeyPress = async (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && message.trim() && channelId) {
@@ -73,6 +92,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }) => {
         
         // Clear the input
         setMessage('');
+        setMessageSent(true);
       } catch (error) {
         console.error('Failed to send message:', error);
         setError('Failed to send message. Please try again.');
@@ -92,6 +112,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }) => {
   return (
     <InputContainer>
       <Input
+        ref={inputRef}
         type="text"
         value={message}
         onChange={handleChange}

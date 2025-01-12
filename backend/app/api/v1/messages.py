@@ -55,18 +55,23 @@ async def get_channel_messages(
             query = query.filter(MessageModel.created_at > since_datetime)
             logger.debug(f"Filtering messages after {since_datetime}")
 
+        # Get total count for this query
+        total_count = query.count()
+
         # Add ordering and pagination
         messages = (
             query
-            .order_by(MessageModel.created_at.asc())
+            .order_by(MessageModel.created_at.desc())  # Most recent first
             .offset(skip)
             .limit(limit)
             .all()
         )
 
         # Log loaded messages
-        logger.info(f"Loaded {len(messages)} messages from channel {channel_id} (since={since}, skip={skip}, limit={limit})")
-        return messages
+        logger.info(f"Loaded {len(messages)} messages from channel {channel_id} (since={since}, skip={skip}, limit={limit}, total={total_count})")
+        
+        # Return messages in chronological order (oldest first)
+        return list(reversed(messages))
 
     except SQLAlchemyError as e:
         logger.error(f"Database error in get_channel_messages: {e}")
@@ -323,4 +328,33 @@ async def get_message(
 
     except SQLAlchemyError as e:
         logger.error(f"Database error in get_message: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/{message_id}/position", response_model=int)
+async def get_message_position(
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a message's position in its channel (number of messages before it)"""
+    try:
+        # Get the message to check channel access and get channel_id
+        message = db.query(MessageModel).filter(MessageModel.id == message_id).first()
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+
+        channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
+        if current_user.id not in [member.id for member in channel.members]:
+            raise HTTPException(status_code=403, detail="Not authorized to view this message")
+
+        # Count messages before this one in the same channel
+        position = db.query(MessageModel).filter(
+            MessageModel.channel_id == message.channel_id,
+            MessageModel.created_at < message.created_at
+        ).count()
+
+        return position
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_message_position: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") 

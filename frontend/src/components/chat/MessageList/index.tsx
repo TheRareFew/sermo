@@ -1,20 +1,18 @@
-import React, { useEffect, useRef, forwardRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, forwardRef, useState, useCallback } from 'react';
 import styled from 'styled-components';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState, StoreMessage, User, Message as ApiMessage } from '../../../types';
-import { transformMessage } from '../../../utils/messageTransform';
-import Message from '../Message';
+import { RootState, StoreMessage, User } from '../../../types';
+import Message, { ChatMessageProps } from '../Message';
 import MessageReplies from '../MessageReplies';
-import ReplyModal from '../ReplyModal';
-import { deleteMessage, toggleExpanded, prependMessages, addMessage, setMessages, setReplies, updateMessage } from '../../../store/messages/messagesSlice';
-import { deleteMessage as deleteMessageApi, getChannelMessages, createReply, getReplies } from '../../../services/api/chat';
-import { setError } from '../../../store/chat/chatSlice';
-import { toast } from 'react-toastify';
-import WebSocketService from '../../../services/websocket';
+import { getChannelMessages } from '../../../services/api/chat';
+import { prependMessages } from '../../../store/messages/messagesSlice';
+import { transformMessage } from '../../../utils/messageTransform';
 
 interface MessageListProps {
   messages: StoreMessage[];
   selectedMessageId?: string | null;
+  initialScrollComplete?: boolean;
+  channelId?: string | null;
 }
 
 const MessageListContainer = styled.div`
@@ -31,6 +29,7 @@ const MessagesWrapper = styled.div`
   flex-direction: column;
   gap: 8px;
   margin-top: auto;
+  min-height: min-content;
 `;
 
 const LoadingIndicator = styled.div`
@@ -41,391 +40,293 @@ const LoadingIndicator = styled.div`
 `;
 
 const MessageWrapper = styled.div<{ $isSelected?: boolean }>`
-  transition: background-color 0.3s ease;
+  transition: all 0.3s ease;
   padding: 4px;
   border-radius: 4px;
   background-color: ${props => props.$isSelected ? '#3a3a3a' : 'transparent'};
+  border-left: ${props => props.$isSelected ? '2px solid #666' : '2px solid transparent'};
+  
+  &.highlight {
+    animation: flash 1s;
+  }
+
+  @keyframes flash {
+    0% { background-color: #4a4a4a; }
+    100% { background-color: ${props => props.$isSelected ? '#3a3a3a' : 'transparent'}; }
+  }
 `;
 
 const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) => {
-  const { messages, selectedMessageId } = props;
-  const dispatch = useDispatch();
+  const { messages, selectedMessageId, initialScrollComplete: propInitialScrollComplete, channelId } = props;
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectedMessageRef = useRef<HTMLDivElement>(null);
+  const highlightTimeoutRef = useRef<NodeJS.Timeout>();
+  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
+  const prevSelectedMessageRef = useRef<string | null | undefined>(null);
+  const lastMessageRef = useRef<string | null>(messages[messages.length - 1]?.id || null);
+  const [shouldScrollToMessage, setShouldScrollToMessage] = useState(false);
+  const [initialScrollComplete, setInitialScrollComplete] = useState(!!propInitialScrollComplete);
+  const prevMessagesRef = useRef(messages);
+  const isUserScrolling = useRef(false);
+  const currentChannelRef = useRef<string | null>(messages[0]?.channelId || null);
+  const isInitialRender = useRef(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(0);
-  const [replyToMessage, setReplyToMessage] = useState<StoreMessage | null>(null);
-  const PAGE_SIZE = 50;
-  const scrollLockRef = useRef<{ position: number; height: number } | null>(null);
-  const loadedRepliesRef = useRef<Set<string>>(new Set());
-  const lastMessageTimestamp = useRef<number | null>(null);
+  const dispatch = useDispatch();
 
-  const { currentUser, users, activeChannelId } = useSelector((state: RootState) => ({
+  const { currentUser, users } = useSelector((state: RootState) => ({
     currentUser: state.auth.user,
-    users: state.chat.users as { [key: string]: User },
-    activeChannelId: state.chat.activeChannelId
+    users: state.chat.users as { [key: string]: User }
   }));
 
-  // Load initial messages when channel changes
+  // Cleanup effect
   useEffect(() => {
-    if (!activeChannelId) return;
-
-    const loadInitialMessages = async () => {
-      try {
-        const messages = await getChannelMessages(activeChannelId, PAGE_SIZE);
-        if (messages.length > 0) {
-          const transformedMessages = messages.map(transformMessage);
-          const organizedMessages = organizeMessagesAndReplies(transformedMessages);
-          dispatch(setMessages({
-            channelId: activeChannelId,
-            messages: organizedMessages
-          }));
-          
-          // Update last message timestamp
-          if (messages.length > 0) {
-            lastMessageTimestamp.current = new Date(messages[messages.length - 1].created_at).getTime();
-          }
-
-          // Connect to WebSocket for this channel
-          WebSocketService.joinChannel(activeChannelId);
-        }
-      } catch (error) {
-        console.error('Error loading initial messages:', error);
-        dispatch(setError('Failed to load messages'));
-      }
-    };
-
-    loadInitialMessages();
-    setPage(0);
-    setHasMore(true);
-    scrollLockRef.current = null;
-
-    // Cleanup: leave the WebSocket channel when component unmounts or channel changes
     return () => {
-      if (activeChannelId) {
-        WebSocketService.leaveChannel(activeChannelId);
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
       }
     };
-  }, [activeChannelId, dispatch]);
+  }, []);
 
-  // Sort messages by creation time to ensure newest is at the bottom
-  const sortedMessages = useMemo(() => {
-    // Filter out messages that are replies (have parentId)
-    const mainMessages = messages.filter(msg => !msg.parentId);
+  // Initial render and channel change handler
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const newChannelId = messages[0]?.channelId;
+    const channelChanged = newChannelId !== currentChannelRef.current;
     
-    return [...mainMessages].sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
-      return timeA - timeB;
-    });
-  }, [messages]);
+    if ((isInitialRender.current || channelChanged) && messages.length > 0) {
+      // Reset all scroll-related state
+      setInitialScrollComplete(false);
+      prevSelectedMessageRef.current = null;
+      lastMessageRef.current = messages[messages.length - 1]?.id;
+      isUserScrolling.current = false;
+      currentChannelRef.current = newChannelId;
 
-  // Reset pagination when channel changes
-  useEffect(() => {
-    setPage(0);
-    setHasMore(true);
-    scrollLockRef.current = null;
-  }, [activeChannelId]);
-
-  // Load replies for messages with replyCount > 0 when channel changes
-  useEffect(() => {
-    const loadRepliesForMessages = async () => {
-      if (!activeChannelId) return;
-      
-      // Get all messages that have replies but haven't loaded them yet
-      const messagesToLoadReplies = messages.filter(msg => 
-        msg.replyCount > 0 && 
-        !msg.repliesLoaded && 
-        !msg.parentId && 
-        !loadedRepliesRef.current.has(msg.id)
-      );
-
-      if (messagesToLoadReplies.length === 0) return;
-
-      for (const message of messagesToLoadReplies) {
-        try {
-          loadedRepliesRef.current.add(message.id);
-          const replies = await getReplies(message.id);
-          const transformedReplies = replies.map(transformMessage);
-          
-          dispatch(setMessages({
-            channelId: activeChannelId,
-            messages: messages.map(msg => 
-              msg.id === message.id 
-                ? { 
-                    ...msg, 
-                    repliesLoaded: true,
-                    replies: transformedReplies,
-                    isExpanded: msg.isExpanded || false
-                  } 
-                : msg
-            )
-          }));
-        } catch (error) {
-          console.error(`Error loading replies for message ${message.id}:`, error);
-          loadedRepliesRef.current.delete(message.id); // Remove from loaded set if failed
+      // Use RAF to ensure DOM is updated before scrolling
+      requestAnimationFrame(() => {
+        if (containerRef.current) {
+          containerRef.current.scrollTop = containerRef.current.scrollHeight;
+          // Double-check scroll position after a brief delay
+          setTimeout(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = containerRef.current.scrollHeight;
+            }
+          }, 50);
         }
-      }
-    };
-
-    // Clear the loaded replies set when channel changes
-    if (activeChannelId) {
-      loadedRepliesRef.current.clear();
+      });
+      setInitialScrollComplete(true);
     }
 
-    loadRepliesForMessages();
-  }, [activeChannelId, messages, dispatch]);
+    isInitialRender.current = false;
+  }, [messages[0]?.channelId]);
 
-  // Helper function to organize messages and their replies
-  const organizeMessagesAndReplies = (messages: StoreMessage[]) => {
-    const mainMessages: StoreMessage[] = [];
-    const repliesByParentId: { [key: string]: StoreMessage[] } = {};
-
-    // Separate messages into main messages and replies
-    messages.forEach(msg => {
-      if (msg.parentId) {
-        // This is a reply
-        if (!repliesByParentId[msg.parentId]) {
-          repliesByParentId[msg.parentId] = [];
-        }
-        repliesByParentId[msg.parentId].push(msg);
-      } else {
-        // This is a main message
-        mainMessages.push(msg);
-      }
-    });
-
-    // Attach replies to their parent messages
-    mainMessages.forEach(msg => {
-      if (repliesByParentId[msg.id]) {
-        msg.replies = repliesByParentId[msg.id];
-        msg.replyCount = repliesByParentId[msg.id].length;
-        msg.repliesLoaded = true;
-      }
-    });
-
-    return mainMessages;
-  };
-
-  const loadMoreMessages = useCallback(async () => {
-    if (!activeChannelId || isLoadingMore || !hasMore) return;
+  // Add function to load older messages
+  const loadOlderMessages = useCallback(async () => {
+    if (!channelId || channelId === null || isLoadingMore) return;
 
     try {
       setIsLoadingMore(true);
-      console.log('[DEBUG] Loading more messages, page:', page + 1);
-
-      // Store the current scroll height and position
       const container = containerRef.current;
-      if (container) {
-        scrollLockRef.current = {
-          position: container.scrollTop,
-          height: container.scrollHeight
-        };
-      }
+      if (!container) return;
 
-      // Load more messages
-      const olderMessages = await getChannelMessages(activeChannelId, PAGE_SIZE, (page + 1) * PAGE_SIZE);
-      
-      if (olderMessages.length < PAGE_SIZE) {
-        setHasMore(false);
-      }
+      // Store the scroll height and a reference element before loading
+      const oldScrollHeight = container.scrollHeight;
+      const oldFirstMessage = container.querySelector('[data-message-id]');
+      const oldFirstMessageTop = oldFirstMessage?.getBoundingClientRect().top;
+
+      const olderMessages = await getChannelMessages(
+        channelId,
+        50, // limit
+        messages.length // skip
+      );
 
       if (olderMessages.length > 0) {
-        // Transform messages and organize them
         const transformedMessages = olderMessages.map(transformMessage);
-        const organizedMessages = organizeMessagesAndReplies(transformedMessages);
-
-        // Prepend the organized messages
-        dispatch(prependMessages({ 
-          channelId: activeChannelId, 
-          messages: organizedMessages
+        dispatch(prependMessages({
+          channelId,
+          messages: transformedMessages
         }));
-        setPage(p => p + 1);
+
+        // After React has updated the DOM, adjust scroll position
+        requestAnimationFrame(() => {
+          if (!container) return;
+          
+          // Calculate new scroll position
+          const newScrollHeight = container.scrollHeight;
+          const heightDifference = newScrollHeight - oldScrollHeight;
+          
+          // Adjust scroll position to maintain the same relative position
+          container.scrollTop = heightDifference;
+
+          // Fine-tune adjustment if we have a reference element
+          if (oldFirstMessage && oldFirstMessageTop) {
+            const newFirstMessageTop = oldFirstMessage.getBoundingClientRect().top;
+            const topDifference = newFirstMessageTop - oldFirstMessageTop;
+            container.scrollTop += topDifference;
+          }
+        });
       }
     } catch (error) {
-      console.error('Error loading more messages:', error);
+      console.error('Error loading older messages:', error);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [activeChannelId, isLoadingMore, hasMore, page, dispatch]);
+  }, [channelId, messages, dispatch, isLoadingMore]);
 
-  // Maintain scroll position after messages are loaded
+  // Handle scroll behavior
   useEffect(() => {
-    if (scrollLockRef.current && containerRef.current) {
-      const container = containerRef.current;
-      const { position, height } = scrollLockRef.current;
-      const newPosition = position + (container.scrollHeight - height);
-      
-      // Immediately set the scroll position
-      container.scrollTop = newPosition;
-      
-      // Clear the scroll lock
-      scrollLockRef.current = null;
-    } else if (page === 0 && containerRef.current) {
-      // Only auto-scroll to bottom on initial load or new messages when we're at page 0
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    let scrollTimeout: NodeJS.Timeout;
+
+    const handleScroll = () => {
+      isUserScrolling.current = true;
+      clearTimeout(scrollTimeout);
+
+      // Check if we're at the top
+      if (container.scrollTop === 0 && !isLoadingMore) {
+        loadOlderMessages();
+      }
+
+      scrollTimeout = setTimeout(() => {
+        isUserScrolling.current = false;
+      }, 150);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, [loadOlderMessages, isLoadingMore]);
+
+  // Add effect to handle messages loading
+  useEffect(() => {
+    if (containerRef.current && messages.length > 0) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [messages, page]);
+  }, [messages.length]);
 
-  // Handle scroll for infinite loading with debounce
-  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    const container = event.currentTarget;
-    if (container.scrollTop <= 100 && !isLoadingMore) {
-      loadMoreMessages();
-    }
-  }, [loadMoreMessages, isLoadingMore]);
-
+  // Handle user scrolling
   useEffect(() => {
-    // Scroll to selected message
-    if (selectedMessageId && selectedMessageRef.current) {
-      selectedMessageRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
-    }
-  }, [selectedMessageId]);
+    if (!containerRef.current) return;
 
-  const handleDeleteMessage = async (messageId: string) => {
-    try {
-      await deleteMessageApi(messageId);
-      if (activeChannelId) {
-        dispatch(deleteMessage({ channelId: activeChannelId, messageId }));
+    const container = containerRef.current;
+    let scrollTimeout: NodeJS.Timeout;
+
+    const handleScroll = () => {
+      isUserScrolling.current = true;
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        isUserScrolling.current = false;
+      }, 150); // Reset after scrolling stops
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, []);
+
+  // Handle scroll behavior
+  useEffect(() => {
+    if (!containerRef.current || isInitialRender.current) return;
+
+    const container = containerRef.current;
+    const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+    const hasNewMessages = messages[messages.length - 1]?.id !== lastMessageRef.current;
+    const isNewMessage = hasNewMessages && messages.length > prevMessagesRef.current.length;
+    const isOwnMessage = isNewMessage && messages[messages.length - 1]?.userId === currentUser?.id;
+
+    // Always scroll to selected message when it changes
+    if (selectedMessageId && selectedMessageId !== prevSelectedMessageRef.current) {
+      const messageElement = container.querySelector(
+        `[data-message-id="${selectedMessageId}"]`
+      ) as HTMLElement;
+      
+      if (messageElement) {
+        messageElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+
+        // Add highlight effect
+        messageElement.classList.add('highlight');
+        
+        if (highlightTimeoutRef.current) {
+          clearTimeout(highlightTimeoutRef.current);
+        }
+        
+        highlightTimeoutRef.current = setTimeout(() => {
+          messageElement.classList.remove('highlight');
+        }, 1000);
       }
-    } catch (error) {
-      console.error('Error deleting message:', error);
+    } 
+    // Immediately scroll to bottom for own messages or when already at bottom
+    else if (isOwnMessage || (isNewMessage && isAtBottom)) {
+      container.scrollTop = container.scrollHeight;
     }
+
+    prevSelectedMessageRef.current = selectedMessageId;
+    lastMessageRef.current = messages[messages.length - 1]?.id;
+    prevMessagesRef.current = messages;
+  }, [selectedMessageId, messages, currentUser?.id]);
+
+  const handleDeleteMessage = (messageId: string) => {
+    console.log('Delete message:', messageId);
   };
 
-  const handleToggleReplies = async (messageId: string) => {
-    if (!activeChannelId) return;
-
-    const message = messages.find(m => m.id === messageId);
-    if (!message) return;
-
-    // If we're expanding and replies aren't loaded yet, load them first
-    if (!message.isExpanded && message.replyCount > 0 && !message.repliesLoaded) {
-      try {
-        const replies = await getReplies(messageId);
-        const transformedReplies = replies.map(transformMessage);
-        
-        dispatch(setMessages({
-          channelId: activeChannelId,
-          messages: messages.map(msg => 
-            msg.id === messageId 
-              ? {
-                  ...msg,
-                  repliesLoaded: true,
-                  replies: transformedReplies,
-                  isExpanded: true // Auto-expand after loading replies
-                }
-              : msg
-          )
-        }));
-        return; // Return early since we've already expanded
-      } catch (error) {
-        console.error('Error loading replies:', error);
-        return;
-      }
-    }
-
-    // Toggle expanded state
-    dispatch(toggleExpanded({ channelId: activeChannelId, messageId }));
+  const handleToggleReplies = (messageId: string) => {
+    console.log('Toggle replies:', messageId);
   };
 
   const handleReply = (messageId: string) => {
-    const message = messages.find(m => m.id === messageId);
-    if (message) {
-      setReplyToMessage(message);
-    }
-  };
-
-  const handleSendReply = async (content: string) => {
-    if (!replyToMessage || !activeChannelId) return;
-    
-    try {
-      const reply = await createReply(replyToMessage.id, content);
-      const transformedReply = transformMessage(reply);
-      
-      // Update the parent message and its replies in a single dispatch
-      dispatch(setMessages({
-        channelId: activeChannelId,
-        messages: messages.map(msg => 
-          msg.id === replyToMessage.id 
-            ? {
-                ...msg,
-                replyCount: (msg.replyCount || 0) + 1,
-                isExpanded: true,
-                repliesLoaded: true,
-                replies: [...(msg.replies || []), transformedReply]
-              }
-            : msg
-        )
-      }));
-      
-      // Auto-scroll to bottom
-      if (containerRef.current) {
-        containerRef.current.scrollTop = containerRef.current.scrollHeight;
-      }
-
-      setReplyToMessage(null);
-      toast.success('Reply sent successfully');
-    } catch (error) {
-      console.error('Error sending reply:', error);
-      toast.error('Failed to send reply. Please try again.');
-    }
+    console.log('Reply to message:', messageId);
   };
 
   return (
-    <>
-      <MessageListContainer ref={containerRef} onScroll={handleScroll}>
+    <MessageListContainer ref={containerRef}>
+      <MessagesWrapper>
         {isLoadingMore && (
           <LoadingIndicator>Loading older messages...</LoadingIndicator>
         )}
-        <MessagesWrapper>
-          {sortedMessages.map(message => (
-            <React.Fragment key={message.id}>
-              <MessageWrapper
-                $isSelected={message.id === selectedMessageId}
-                ref={message.id === selectedMessageId ? selectedMessageRef : undefined}
-              >
-                <Message
-                  content={message.content}
-                  sender={users[message.userId]?.username || message.userId}
-                  timestamp={message.createdAt}
-                  userId={message.userId}
-                  currentUserId={currentUser?.id}
-                  onDelete={() => handleDeleteMessage(message.id)}
-                  replyCount={message.replyCount}
-                  isExpanded={message.isExpanded || false}
-                  onToggleReplies={() => handleToggleReplies(message.id)}
-                  onReply={() => handleReply(message.id)}
-                />
-              </MessageWrapper>
-              {message.isExpanded && message.replyCount > 0 && (
-                <MessageReplies 
-                  parentId={message.id}
-                  replies={message.replies || []}
-                  isExpanded={message.isExpanded}
-                  onToggleReplies={handleToggleReplies}
-                  onDelete={handleDeleteMessage}
-                  currentUserId={currentUser?.id}
-                />
-              )}
-            </React.Fragment>
-          ))}
-        </MessagesWrapper>
-      </MessageListContainer>
-      
-      {replyToMessage && (
-        <ReplyModal
-          isOpen={true}
-          onClose={() => setReplyToMessage(null)}
-          onSubmit={handleSendReply}
-          parentMessage={replyToMessage}
-        />
-      )}
-    </>
+        {[...messages].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()).map(message => (
+          <MessageWrapper
+            key={message.id}
+            $isSelected={message.id === selectedMessageId}
+            data-message-id={message.id}
+          >
+            <Message
+              content={message.content}
+              sender={users[message.userId]?.username || message.userId}
+              timestamp={message.createdAt}
+              userId={message.userId}
+              currentUserId={currentUser?.id}
+              onDelete={() => handleDeleteMessage(message.id)}
+              replyCount={message.replyCount || 0}
+              isExpanded={message.isExpanded || false}
+              onToggleReplies={() => handleToggleReplies(message.id)}
+              onReply={() => handleReply(message.id)}
+              isReply={false}
+            />
+            {message.isExpanded && message.replies && (
+              <MessageReplies
+                parentId={message.id}
+                replies={message.replies}
+                currentUserId={currentUser?.id}
+                isExpanded={message.isExpanded}
+                onToggleReplies={() => handleToggleReplies(message.id)}
+                onDelete={handleDeleteMessage}
+              />
+            )}
+          </MessageWrapper>
+        ))}
+      </MessagesWrapper>
+    </MessageListContainer>
   );
 });
 
