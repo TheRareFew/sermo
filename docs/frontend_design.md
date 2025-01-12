@@ -7,7 +7,8 @@ A retro-styled chat application inspired by IRC clients and early instant messag
 - React.js for UI components
 - Redux for state management
 - WebSocket for real-time communications
-- CSS Modules for styling
+- Styled Components for styling
+- Lodash for utility functions
 
 ## Directory Structure
 ```
@@ -21,14 +22,21 @@ frontend/
 │   │   ├── common/
 │   │   │   ├── Button/
 │   │   │   ├── Input/
-│   │   │   └── Modal/
+│   │   │   ├── Modal/
+│   │   │   ├── SearchBar/
+│   │   │   └── SearchResults/
 │   │   ├── layout/
+│   │   │   ├── MainLayout/
 │   │   │   ├── Sidebar/
 │   │   │   └── Header/
 │   │   ├── chat/
 │   │   │   ├── MessageList/
 │   │   │   ├── MessageInput/
-│   │   │   └── Channel/
+│   │   │   ├── Channel/
+│   │   │   ├── DeleteMessageModal/
+│   │   │   ├── MessageOptions/
+│   │   │   ├── MessageReplies/
+│   │   │   └── ReplyModal/
 │   │   └── users/
 │   │       ├── UserList/
 │   │       └── UserStatus/
@@ -43,6 +51,11 @@ frontend/
 │   │   └── users/
 │   ├── services/
 │   │   ├── api/
+│   │   │   ├── base.ts
+│   │   │   ├── search.ts
+│   │   │   └── chat.ts
+│   │   ├── cache/
+│   │   │   └── searchCache.ts
 │   │   └── websocket/
 │   ├── styles/
 │   │   ├── themes/
@@ -118,6 +131,32 @@ frontend/
    - Status selector
    - Custom status message
    - Profile picture
+
+### Search Components
+1. **SearchBar**
+   - Retro-styled search input
+   - Debounced search functionality
+   - Error handling and display
+   - Click outside handling
+   - Keyboard navigation (Escape to clear)
+   - Real-time search feedback
+
+2. **SearchResults**
+   - Categorized results display (Messages, Channels, Files)
+   - Section-based organization
+   - Interactive result items
+   - Navigation to selected items
+   - Smooth scrolling to messages
+   - Result highlighting
+   - Empty state handling
+
+### Cache Services
+1. **SearchCache**
+   - In-memory caching for search results
+   - TTL-based cache invalidation
+   - Maximum entry limit
+   - Automatic cleanup of expired entries
+   - Performance optimization
 
 ## State Management
 
@@ -244,6 +283,39 @@ store/
 - Custom emoji support
 - Voice chat integration
 - Screen sharing
-```
+
+## Search Integration
+- Real-time search across messages, channels, and files
+- Debounced API calls for performance
+- Client-side caching
+- Result categorization
+- Navigation integration
+- Error handling and feedback
+- Empty state management
+
+### Search Endpoints
+- `/api/search/messages` - Search message content
+- `/api/search/channels` - Search channel names and descriptions
+- `/api/search/files` - Search file names and types
+
+### Search Features
+1. **Message Search**
+   - Content-based search
+   - Channel context display
+   - Timestamp information
+   - Navigation to message
+   - Highlight selected message
+
+2. **Channel Search**
+   - Name and description search
+   - Member count display
+   - Direct message vs public channel indicators
+   - One-click channel switching
+
+3. **File Search**
+   - Filename and type search
+   - Channel context
+   - Creation date
+   - File preview (planned)
 
 This architecture provides a solid foundation for building a retro-styled chat application while maintaining modern development practices and performance considerations.

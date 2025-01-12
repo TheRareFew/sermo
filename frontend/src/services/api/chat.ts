@@ -1,10 +1,12 @@
-import { Channel, Message, User } from '../../types';
+import { User, Channel, Message, ApiAuthResponse } from '../../types';
 import { apiRequest } from './utils';
 import wsService from '../websocket';
 
 interface ApiUser {
   id: string;
   username: string;
+  email: string;
+  full_name: string;
   status: 'online' | 'offline' | 'away' | 'busy';
   last_seen: string;
 }
@@ -13,10 +15,8 @@ interface ApiUser {
 const transformUser = (apiUser: ApiUser): User => ({
   id: apiUser.id,
   username: apiUser.username,
-  email: `${apiUser.username}@example.com`, // Placeholder email since it's required
-  full_name: apiUser.username, // Using username as full_name since it's required
   status: apiUser.status || 'offline',
-  last_seen: apiUser.last_seen
+  avatar_url: undefined
 });
 
 interface CreateChannelParams {
@@ -24,6 +24,12 @@ interface CreateChannelParams {
   description?: string;
   is_public: boolean;
   member_ids?: string[];
+}
+
+interface SendMessageParams {
+  content: string;
+  channelId: string;
+  parentId?: string;
 }
 
 export const getChannels = async (): Promise<Channel[]> => {
@@ -40,7 +46,7 @@ export const getChannels = async (): Promise<Channel[]> => {
 };
 
 export const getChannelMessages = async (channelId: string, limit: number = 50, skip: number = 0): Promise<Message[]> => {
-  console.log(`Fetching messages for channel ${channelId} with limit ${limit} and skip ${skip}...`);
+  console.log(`[DEBUG] Fetching messages for channel ${channelId} with limit ${limit} and skip ${skip}...`);
   try {
     if (!channelId) {
       throw new Error('Invalid channel ID');
@@ -55,7 +61,7 @@ export const getChannelMessages = async (channelId: string, limit: number = 50, 
     }
 
     const messages = await apiRequest<Message[]>(`/channels/${channelId}/messages?limit=${limit}&skip=${skip}`);
-    console.log('Received messages:', messages);
+    console.log('[DEBUG] Raw messages from API:', messages);
 
     // Validate and transform messages
     const validMessages = messages
@@ -66,10 +72,10 @@ export const getChannelMessages = async (channelId: string, limit: number = 50, 
         is_system: msg.is_system || false
       }));
 
-    console.log('Validated and transformed messages:', validMessages);
+    console.log('[DEBUG] Validated and transformed messages:', validMessages);
     return validMessages;
   } catch (error) {
-    console.error(`Error fetching messages for channel ${channelId}:`, error);
+    console.error(`[DEBUG] Error fetching messages for channel ${channelId}:`, error);
     throw error;
   }
 };
@@ -106,9 +112,10 @@ export const createChannel = async (params: CreateChannelParams): Promise<Channe
 export const joinChannel = async (channelId: string): Promise<void> => {
   console.log(`Joining channel ${channelId}...`);
   try {
-    // Join channel through WebSocket
+    // For public channels, we don't need to make an API call
+    // Just join via WebSocket
     await wsService.joinChannel(channelId);
-    console.log(`Joined channel ${channelId}`);
+    console.log(`Joined channel ${channelId} via WebSocket`);
   } catch (error) {
     console.error(`Error joining channel ${channelId}:`, error);
     throw error;
@@ -194,14 +201,51 @@ export const getReplies = async (messageId: string): Promise<Message[]> => {
 export const createReply = async (messageId: string, content: string): Promise<Message> => {
   console.log(`Creating reply to message ${messageId}:`, content);
   try {
+    // First get the parent message to ensure we use the correct channel
+    const parentMessage = await apiRequest<Message>(`/messages/${messageId}`);
+    const channelId = parentMessage.channel_id.toString();
+
     const reply = await apiRequest<Message>(`/messages/${messageId}/replies`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ 
+        content,
+        channel_id: channelId
+      }),
     });
-    console.log('Created reply:', reply);
+
     return reply;
   } catch (error) {
     console.error(`Error creating reply to message ${messageId}:`, error);
+    throw error;
+  }
+};
+
+export const sendMessage = async (params: SendMessageParams): Promise<Message> => {
+  console.log('Sending message:', params);
+  try {
+    let endpoint: string;
+    let channelIdToUse = params.channelId;
+
+    if (params.parentId) {
+      // If this is a reply, first get the parent message to ensure we use the correct channel
+      const parentMessage = await apiRequest<Message>(`/messages/${params.parentId}`);
+      channelIdToUse = parentMessage.channel_id.toString();
+      endpoint = `/messages/${params.parentId}/replies`;
+    } else {
+      endpoint = `/channels/${params.channelId}/messages`;
+    }
+
+    const message = await apiRequest<Message>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ 
+        content: params.content,
+        channel_id: channelIdToUse
+      }),
+    });
+
+    return message;
+  } catch (error) {
+    console.error('Error sending message:', error);
     throw error;
   }
 }; 

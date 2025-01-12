@@ -36,6 +36,7 @@ export async function apiRequest<T>(
   console.log(`Making API request to ${url}`, {
     method: rest.method || 'GET',
     headers: requestHeaders,
+    body: rest.body ? JSON.parse(rest.body as string) : undefined,
   });
 
   try {
@@ -50,53 +51,56 @@ export async function apiRequest<T>(
 
     let data;
     const contentType = response.headers.get('content-type');
+    const responseText = await response.text();
     
+    console.log(`Raw response text for ${endpoint}:`, responseText);
+
     try {
-      if (contentType && contentType.includes('application/json')) {
-        const text = await response.text();
-        if (!text) {
-          // Handle empty response
-          data = null;
-          console.log(`Empty response for ${endpoint}`);
-        } else {
-          try {
-            data = JSON.parse(text);
-            console.log(`Response data for ${endpoint}:`, JSON.stringify(data, null, 2));
-          } catch (parseError: unknown) {
-            const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown JSON parse error';
-            console.error(`Error parsing JSON response for ${endpoint}:`, parseError);
-            throw new Error(`Failed to parse JSON response: ${errorMessage}`);
-          }
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+          console.log(`Parsed response data for ${endpoint}:`, data);
+        } catch (parseError) {
+          console.warn(`Response is not JSON for ${endpoint}, using raw text`);
+          data = responseText;
         }
       } else {
-        data = await response.text();
-        console.log(`Response text for ${endpoint}:`, data);
-        // Try to parse as JSON anyway in case the content-type header is wrong
-        if (data) {
-          try {
-            data = JSON.parse(data);
-            console.log(`Parsed text response as JSON for ${endpoint}:`, data);
-          } catch {
-            // Not JSON, keep as text
-          }
-        }
+        console.log(`Empty response for ${endpoint}`);
+        data = null;
       }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error(`Error parsing response for ${endpoint}:`, error);
-      throw new Error(`Failed to parse response: ${errorMessage}`);
+    } catch (error) {
+      console.error(`Error processing response for ${endpoint}:`, error);
+      throw new Error(`Failed to process response: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
     if (!response.ok) {
-      console.error(`API error for ${endpoint}:`, data);
-      throw new Error(typeof data === 'object' ? JSON.stringify(data) : data || 'An error occurred');
+      console.error(`API error for ${endpoint}:`, {
+        status: response.status,
+        statusText: response.statusText,
+        data
+      });
+
+      let errorMessage = 'An error occurred';
+      if (typeof data === 'object' && data !== null) {
+        errorMessage = JSON.stringify(data);
+      } else if (typeof data === 'string') {
+        errorMessage = data;
+      }
+
+      throw new Error(`API error (${response.status}): ${errorMessage}`);
+    }
+
+    if (data === null && !response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
     }
 
     return data;
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error(`Request failed for ${endpoint}:`, error);
-    throw new Error(`API request failed: ${errorMessage}`);
+  } catch (error) {
+    console.error(`Request failed for ${endpoint}:`, {
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+    throw error instanceof Error ? error : new Error('API request failed');
   }
 }
 

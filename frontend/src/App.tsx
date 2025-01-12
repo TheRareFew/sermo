@@ -5,7 +5,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import LoginForm from './components/auth/LoginForm';
 import SignupForm from './components/auth/SignupForm';
-import ForgotPassword from './components/auth/ForgotPassword';
+import ForgotPasswordForm from './components/auth/ForgotPasswordForm';
 import MainLayout from './components/layout/MainLayout';
 import { theme } from './styles/themes/default';
 import { RootState } from './types';
@@ -37,7 +37,7 @@ const App: React.FC = () => {
             />
           )}
           {currentView === 'forgot-password' && (
-            <ForgotPassword
+            <ForgotPasswordForm
               onLoginClick={() => setCurrentView('login')}
             />
           )}

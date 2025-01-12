@@ -1,0 +1,61 @@
+make todo list X
+make sure backend documentation is up to date X
+remove unnessary files from frontend X
+    Comb through the frontend of our app. Identify anything that doesn't actually get used by our app. Remove things we are not using and do not intend to use.
+make sure all files are in the correct directory X
+make sure all files are named correctly X
+remove unused dependencies X
+make sure requirements.txt is up to date (backend) X
+make sure frontend npm configuration is correct and includes all necessary dependencies X
+make high-level analysis of the project X
+make high-level analysis of the frontend X
+
+identify bugs most critical to general functionality X
+fix the bugs
+
+finish search functionality
+    - be able to click messages in the list and be taken there
+
+move on with other features:
+    - user panel on right instead of bottom left
+    - current user profile and settings cog on bottom left
+    - emoji reactions
+        - use classic message board emojis
+    - files
+        - uploads
+        - downloads
+        - embedding
+    - user presence
+    - user profiles
+        - profile picture
+        - status
+    - improve thread support
+    - improve channels
+        - channel settings
+        - channel description
+        - reorder channels
+        - channel join
+        - channel leave
+        - channel delete
+        - channel rename
+    - authentication
+        - email verification
+        - password reset
+        - password change
+        - account deletion
+        - account recovery
+
+known issues:
+
+    channels should be sorted by creation date with oldest at the top X
+    channel switching takes forever to respond X
+    messages aren't posting live for the user X
+    nothing comes up when reply option is selected X
+    
+    no option to delete messages
+    need to convert all timestamps read from the database to local time for the user before displaying them X
+
+
+
+
+

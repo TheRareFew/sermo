@@ -61,7 +61,7 @@ deactivate
 ```
 
 ## Base URL
-All HTTP endpoints are prefixed with `/api/v1/`
+All HTTP endpoints are prefixed with `/api/`
 
 ## Authentication
 Authentication is required for all endpoints. Send the JWT token in the Authorization header:
@@ -335,7 +335,7 @@ Authorization: Bearer <your_jwt_token>
 ## Reactions
 
 ### Add Reaction
-- **POST** `/reactions/{message_id}/reactions`
+- **POST** `/messages/{message_id}/reactions`
 - Add a reaction to a message
 - Request Body:
   ```json
@@ -346,12 +346,12 @@ Authorization: Bearer <your_jwt_token>
 - Response: Reaction object
 
 ### Remove Reaction
-- **DELETE** `/reactions/{message_id}/reactions/{reaction_id}`
+- **DELETE** `/messages/{message_id}/reactions/{reaction_id}`
 - Remove a reaction from a message
 - Response: 204 No Content
 
 ### Get Reactions
-- **GET** `/reactions/{message_id}/reactions`
+- **GET** `/messages/{message_id}/reactions`
 - Get reactions for a message
 - Response: Array of Reaction objects
 
@@ -387,7 +387,7 @@ Authorization: Bearer <your_jwt_token>
 ## WebSocket Connections
 
 ### Presence WebSocket
-- **WS** `/websockets/presence`
+- **WS** `/ws/presence`
 - Real-time user presence updates
 - Query Parameters:
   - `token`: string (JWT token)
@@ -410,7 +410,7 @@ Authorization: Bearer <your_jwt_token>
     ```
 
 ### Chat WebSocket
-- **WS** `/websockets/chat`
+- **WS** `/ws/chat`
 - Real-time chat messaging
 - Query Parameters:
   - `token`: string (JWT token)
@@ -470,13 +470,14 @@ The WebSocket connection handles various channel-related events:
 ### WebSocket Message Format
 ```json
 {
-  "type": "string",
-  "content": "string",
-  "channel_id": "string",
-  "code": "string",
-  "sender_id": "string",
-  "created_at": "string",
-  "is_system": "boolean"
+  "type": "message",
+  "message": {
+    "id": "string",
+    "content": "string",
+    "channel_id": "string",
+    "sender_id": "string",
+    "created_at": "string"
+  }
 }
 ```
 

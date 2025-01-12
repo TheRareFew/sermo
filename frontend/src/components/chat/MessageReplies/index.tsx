@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import styled from 'styled-components';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { StoreMessage, RootState } from '../../../types';
-import ChatMessage from '../../common/ChatMessage';
+import { transformMessage } from '../../../utils/messageTransform';
+import Message from '../Message';
+import { setReplies } from '../../../store/messages/messagesSlice';
+import { getReplies } from '../../../services/api/chat';
 
 interface MessageRepliesProps {
   parentId: string;
@@ -63,20 +66,44 @@ const MessageReplies: React.FC<MessageRepliesProps> = ({
   onDelete,
   currentUserId,
 }) => {
+  const dispatch = useDispatch();
   const users = useSelector((state: RootState) => state.chat?.users || {});
+  const activeChannelId = useSelector((state: RootState) => state.chat.activeChannelId);
 
-  console.log('MessageReplies - currentUserId:', currentUserId);
-  console.log('MessageReplies - replies:', replies.map(r => ({
-    id: r.id,
-    userId: r.userId,
-    isOwnMessage: r.userId === currentUserId
-  })));
+  // Load replies when expanded
+  useEffect(() => {
+    const loadReplies = async () => {
+      if (!isExpanded || !activeChannelId || !parentId) return;
+
+      try {
+        const fetchedReplies = await getReplies(parentId);
+        const transformedReplies = fetchedReplies.map(reply => transformMessage(reply));
+
+        dispatch(setReplies({
+          channelId: activeChannelId,
+          messageId: parentId,
+          replies: transformedReplies
+        }));
+      } catch (error) {
+        console.error('Error loading replies:', error);
+      }
+    };
+
+    loadReplies();
+  }, [isExpanded, activeChannelId, parentId, dispatch]);
+
+  // Sort replies by creation time
+  const sortedReplies = [...replies].sort((a, b) => {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+    return timeA - timeB;
+  });
 
   return (
     <RepliesContainer isExpanded={isExpanded}>
-      {replies.map((reply) => (
+      {sortedReplies.map((reply) => (
         <ReplyWrapper key={reply.id}>
-          <ChatMessage
+          <Message
             content={reply.content}
             sender={users[reply.userId]?.username || reply.userId}
             timestamp={reply.createdAt}

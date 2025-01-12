@@ -13,44 +13,148 @@ const messagesSlice = createSlice({
   reducers: {
     setMessages: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[] }>) => {
       const { channelId, messages } = action.payload;
-      state.messagesByChannel[channelId] = messages;
+      
+      // Organize messages by parent/reply relationship
+      const mainMessages: StoreMessage[] = [];
+      const repliesByParentId: { [key: string]: StoreMessage[] } = {};
+
+      // First pass: separate messages into main messages and replies
+      messages.forEach(msg => {
+        if (msg.parentId) {
+          // This is a reply
+          if (!repliesByParentId[msg.parentId]) {
+            repliesByParentId[msg.parentId] = [];
+          }
+          repliesByParentId[msg.parentId].push(msg);
+        } else {
+          // This is a main message
+          mainMessages.push(msg);
+        }
+      });
+
+      // Second pass: attach replies to their parent messages
+      mainMessages.forEach(msg => {
+        if (repliesByParentId[msg.id]) {
+          msg.replies = repliesByParentId[msg.id];
+          msg.replyCount = repliesByParentId[msg.id].length;
+          msg.repliesLoaded = true;
+        }
+      });
+
+      // Update the state with organized messages
+      state.messagesByChannel[channelId] = mainMessages;
       state.loading = false;
       state.error = null;
     },
-    addMessage: (state, action: PayloadAction<StoreMessage>) => {
-      const { channelId } = action.payload;
+    prependMessages: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[] }>) => {
+      const { channelId, messages } = action.payload;
+      if (!state.messagesByChannel[channelId]) {
+        state.messagesByChannel[channelId] = [];
+      }
+      // Add messages to the beginning of the array, avoiding duplicates
+      const existingIds = new Set(state.messagesByChannel[channelId].map(msg => msg.id));
+      const newMessages = messages.filter(msg => !existingIds.has(msg.id));
+      state.messagesByChannel[channelId] = [...newMessages, ...state.messagesByChannel[channelId]];
+    },
+    addMessage: (state, action: PayloadAction<{ channelId: string; message: StoreMessage }>) => {
+      const { channelId, message } = action.payload;
       
       // Initialize channel messages array if it doesn't exist
       if (!state.messagesByChannel[channelId]) {
         state.messagesByChannel[channelId] = [];
       }
 
-      // Check if message already exists by ID
+      // Check if message already exists
       const existingMessageIndex = state.messagesByChannel[channelId].findIndex(
-        (msg: StoreMessage) => msg.id === action.payload.id
+        msg => msg.id === message.id
       );
 
       if (existingMessageIndex === -1) {
-        // Add new message and sort by timestamp
-        state.messagesByChannel[channelId].push(action.payload);
-        state.messagesByChannel[channelId].sort((a, b) => 
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        );
-      } else {
-        // Update existing message if needed
-        const existingMessage = state.messagesByChannel[channelId][existingMessageIndex];
-        if (existingMessage.updatedAt !== action.payload.updatedAt) {
-          state.messagesByChannel[channelId][existingMessageIndex] = action.payload;
+        // Add new message if it doesn't exist
+        const newMessage = {
+          ...message,
+          replies: [],
+          repliesLoaded: false,
+          isExpanded: false,
+          replyCount: message.replyCount || 0
+        };
+        
+        state.messagesByChannel[channelId].push(newMessage);
+        
+        // Sort messages by creation time
+        state.messagesByChannel[channelId].sort((a, b) => {
+          const timeA = new Date(a.createdAt).getTime();
+          const timeB = new Date(b.createdAt).getTime();
+          return timeA - timeB;
+        });
+
+        // Update parent message if this is a reply
+        if (message.parentId) {
+          const parentMessage = state.messagesByChannel[channelId].find(
+            msg => msg.id === message.parentId
+          );
+          if (parentMessage) {
+            parentMessage.replyCount = (parentMessage.replyCount || 0) + 1;
+            if (!parentMessage.replies) {
+              parentMessage.replies = [];
+            }
+            parentMessage.replies.push(newMessage);
+            // Sort replies by creation time
+            parentMessage.replies.sort((a, b) => {
+              const timeA = new Date(a.createdAt).getTime();
+              const timeB = new Date(b.createdAt).getTime();
+              return timeA - timeB;
+            });
+          }
         }
+      } else {
+        // Update existing message while preserving its state
+        const existingMessage = state.messagesByChannel[channelId][existingMessageIndex];
+        state.messagesByChannel[channelId][existingMessageIndex] = {
+          ...message,
+          replies: existingMessage.replies || [],
+          repliesLoaded: existingMessage.repliesLoaded || false,
+          isExpanded: existingMessage.isExpanded || false,
+          replyCount: existingMessage.replyCount || 0
+        };
       }
     },
     updateMessage: (state, action: PayloadAction<{ channelId: string; id: string; message: StoreMessage }>) => {
-      const { channelId, id } = action.payload;
+      const { channelId, id, message } = action.payload;
       const messages = state.messagesByChannel[channelId];
-      if (messages) {
-        const index = messages.findIndex((msg: StoreMessage) => msg.id === id);
-        if (index !== -1) {
-          messages[index] = action.payload.message;
+      if (!messages) return;
+
+      // First check if it's a main message
+      const index = messages.findIndex((msg: StoreMessage) => msg.id === id);
+      if (index !== -1) {
+        // Preserve existing state when updating
+        const existingMessage = messages[index];
+        messages[index] = {
+          ...message,
+          replies: existingMessage.replies || [],
+          repliesLoaded: existingMessage.repliesLoaded || false,
+          isExpanded: existingMessage.isExpanded || false,
+          replyCount: existingMessage.replyCount || 0
+        };
+      } else {
+        // Check if it's a reply to any message
+        for (const mainMessage of messages) {
+          if (mainMessage.replies) {
+            const replyIndex = mainMessage.replies.findIndex(reply => reply.id === id);
+            if (replyIndex !== -1) {
+              // Preserve parent ID and other state when updating reply
+              const existingReply = mainMessage.replies[replyIndex];
+              mainMessage.replies[replyIndex] = {
+                ...message,
+                parentId: mainMessage.id,
+                replies: existingReply.replies || [],
+                repliesLoaded: existingReply.repliesLoaded || false,
+                isExpanded: existingReply.isExpanded || false,
+                replyCount: existingReply.replyCount || 0
+              };
+              break;
+            }
+          }
         }
       }
     },
@@ -91,16 +195,28 @@ const messagesSlice = createSlice({
       const { channelId, messageId, replies } = action.payload;
       const messages = state.messagesByChannel[channelId];
       if (messages) {
-        const message = messages.find((msg: StoreMessage) => msg.id === messageId);
-        if (message) {
-          // Add replies to the channel's messages
-          state.messagesByChannel[channelId] = [
-            ...messages,
-            ...replies.filter(reply => !messages.some(msg => msg.id === reply.id))
-          ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        const messageIndex = messages.findIndex((msg: StoreMessage) => msg.id === messageId);
+        if (messageIndex !== -1) {
+          // Create a new message object with the updated replies
+          const updatedMessage = {
+            ...messages[messageIndex],
+            replies: [
+              ...(messages[messageIndex].replies || []),
+              ...replies.filter(reply => 
+                !messages[messageIndex].replies?.some(existingReply => 
+                  existingReply.id === reply.id
+                )
+              )
+            ],
+            repliesLoaded: true,
+            isExpanded: true // Auto-expand when new replies are added
+          };
           
           // Update reply count
-          message.replyCount = replies.length;
+          updatedMessage.replyCount = updatedMessage.replies.length;
+          
+          // Update the message in the array
+          messages[messageIndex] = updatedMessage;
         }
       }
     },
@@ -119,6 +235,7 @@ const messagesSlice = createSlice({
 
 export const {
   setMessages,
+  prependMessages,
   addMessage,
   updateMessage,
   deleteMessage,

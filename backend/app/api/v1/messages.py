@@ -23,35 +23,22 @@ async def get_channel_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get messages in channel"""
+    """Get messages from channel"""
     try:
-        # Check channel access
+        # Check channel exists and user has access
         channel = db.query(Channel).filter(Channel.id == channel_id).first()
         if not channel:
             raise HTTPException(status_code=404, detail="Channel not found")
         
-        # For public channels, automatically add the user as a member if they're not already
-        if channel.is_public and current_user.id not in [m.id for m in channel.members]:
-            try:
-                channel.members.append(current_user)
-                db.commit()
-                db.refresh(channel)
-                logger.info(f"Added user {current_user.id} to public channel {channel_id}")
-            except SQLAlchemyError as e:
-                logger.error(f"Database error while adding member to public channel: {e}")
-                db.rollback()
-                # Continue even if adding fails - they can still view messages in public channels
-        
-        # For private channels, check if user is a member
-        elif not channel.is_public and current_user.id not in [m.id for m in channel.members]:
-            raise HTTPException(status_code=403, detail="Not a member of this channel")
+        if current_user.id not in [member.id for member in channel.members]:
+            raise HTTPException(status_code=403, detail="Not authorized to view this channel")
 
         # Get messages
         messages = (
             db.query(MessageModel)
             .filter(MessageModel.channel_id == channel_id)
             .filter(MessageModel.parent_id.is_(None))  # Only get top-level messages
-            .order_by(MessageModel.created_at.desc())
+            .order_by(MessageModel.created_at.asc())  # Changed to ascending order
             .offset(skip)
             .limit(limit)
             .all()

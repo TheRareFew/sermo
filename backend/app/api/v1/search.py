@@ -17,7 +17,10 @@ from ...models.channel import Channel, channel_members
 from ..deps import get_db, get_current_user
 from ...models.user import User
 
-router = APIRouter()
+# Create router with explicit tags
+router = APIRouter(
+    tags=["search"]
+)
 logger = logging.getLogger(__name__)
 
 @router.get("/messages", response_model=List[MessageSearchResult])

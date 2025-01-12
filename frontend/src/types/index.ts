@@ -1,13 +1,14 @@
-// Base types
+// User Types
+export type UserStatus = 'online' | 'offline' | 'away' | 'busy';
+
 export interface User {
   id: string;
   username: string;
-  email: string;
-  full_name: string;
-  status: 'online' | 'offline' | 'away' | 'busy';
-  last_seen: string;
+  status: UserStatus;
+  avatar_url?: string;
 }
 
+// Base types
 export interface Channel {
   id: string;
   name: string;
@@ -20,12 +21,25 @@ export interface Channel {
   unreadCount: number;
 }
 
+export interface RawMessage {
+  id: number | string;
+  content: string;
+  channel_id: number | string;
+  sender_id: number | string;
+  created_at: string;
+  updated_at?: string;
+  is_system?: boolean;
+  parent_id?: number | string;
+  reply_count?: number;
+}
+
 export interface Message {
   id: string;
   content: string;
   sender_id: string;
   channel_id: string;
   created_at: string;
+  updated_at: string;
   is_system?: boolean;
   parent_id?: string;
   reply_count?: number;
@@ -44,6 +58,8 @@ export interface StoreMessage {
   parentId?: string;
   replyCount: number;
   isExpanded?: boolean;
+  repliesLoaded?: boolean;
+  replies?: StoreMessage[];
 }
 
 // Attachment type
@@ -121,53 +137,42 @@ export interface UsersState {
 }
 
 // WebSocket message types
-export interface WebSocketMessageBase {
-  type: 'join_channel' | 'leave_channel' | 'message' | 'message_sent' | 'channel_access_denied' | 'user_status' | 'presence_update' | 'channel_join_error' | 'channel_joined' | 'channel_left' | 'error' | 'new_reply';
-}
+export type WebSocketMessageType = 
+  | 'join'
+  | 'joined'
+  | 'message'
+  | 'message_sent'
+  | 'message_updated'
+  | 'new_message'
+  | 'new_reply'
+  | 'message_deleted'
+  | 'channel_created'
+  | 'channel_updated'
+  | 'channel_deleted'
+  | 'unread_count_updated'
+  | 'user_status'
+  | 'error'
+  | 'ping'
+  | 'pong';
 
-export interface WebSocketErrorMessage extends WebSocketMessageBase {
-  type: 'error';
-  code?: string;
-  message?: string;
+export interface WebSocketMessageData {
+  channel_id?: number;
+  message_id?: string;
   content?: string;
+  id?: string;
+  user_id?: string;
+  status?: UserStatus;
+  count?: number;
+  message?: RawMessage;
+  error?: string;
+  parent_id?: string;
 }
 
-export interface WebSocketChannelJoinMessage extends WebSocketMessageBase {
-  type: 'channel_joined' | 'channel_join_error';
-  channel_id: string | number;
-  message?: string;
+export interface WebSocketMessage {
+  type: WebSocketMessageType;
+  data?: WebSocketMessageData;
+  message?: string; // For error messages
 }
-
-export interface WebSocketChannelLeftMessage extends WebSocketMessageBase {
-  type: 'channel_left';
-  channel_id: string | number;
-}
-
-export interface WebSocketChannelMessage extends WebSocketMessageBase {
-  type: 'message' | 'new_reply';
-  message: {
-    id: string | number;
-    content: string;
-    channel_id: string | number;
-    sender_id: string | number;
-    created_at: string;
-  };
-  parentId?: string | number;
-}
-
-export interface WebSocketStatusMessage extends WebSocketMessageBase {
-  type: 'user_status' | 'presence_update';
-  user_id: string | number;
-  status: 'online' | 'offline' | 'away' | 'busy';
-  last_seen?: string;
-}
-
-export type WebSocketMessage = 
-  | WebSocketErrorMessage 
-  | WebSocketChannelJoinMessage 
-  | WebSocketChannelLeftMessage 
-  | WebSocketChannelMessage
-  | WebSocketStatusMessage;
 
 // Root State type
 export interface RootState {
@@ -175,4 +180,37 @@ export interface RootState {
   chat: ChatState;
   messages: MessagesState;
   users: UsersState;
+}
+
+export interface SearchResult {
+  channels: ChannelSearchResult[];
+  messages: MessageSearchResult[];
+  files: FileSearchResult[];
+}
+
+export interface ChannelSearchResult {
+  id: string;
+  name: string;
+  description?: string;
+  is_direct_message: boolean;
+  member_count: number;
+}
+
+export interface MessageSearchResult {
+  id: string;
+  content: string;
+  created_at: string;
+  sender_id: string;
+  channel_id: string;
+  channel_name: string;
+}
+
+export interface FileSearchResult {
+  id: string;
+  filename: string;
+  file_type: string;
+  file_path: string;
+  created_at: string;
+  channel_id: string;
+  channel_name: string;
 } 

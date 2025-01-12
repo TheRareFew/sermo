@@ -121,15 +121,18 @@ class ConnectionManager:
             logger.error(f"Error joining channel {channel_id} for user {user_id}: {str(e)}")
             raise
     
-    async def broadcast_to_channel(self, channel_id: int, message: dict):
-        """Send a message to all users in a channel"""
+    async def broadcast_to_channel(self, channel_id: int, message: dict, exclude_user_id: Optional[int] = None):
+        """Send a message to all users in a channel except the excluded user"""
         try:
             if channel_id in self.channel_connections:
                 # Create a list of users to remove if their connection is stale
                 users_to_remove = []
                 
-                # Try to send to each connection
+                # Try to send to each connection, excluding the sender
                 for user_id, ws in self.channel_connections[channel_id].items():
+                    if exclude_user_id and user_id == exclude_user_id:
+                        continue  # Skip the sender
+                        
                     try:
                         await ws.send_json(message)
                     except Exception as e:
@@ -398,13 +401,14 @@ async def chat_websocket(
                         
                         # Use the same timestamp for broadcasting
                         message_data = {
-                            "type": "message",
+                            "type": "new_message",
                             "message": {
                                 "id": str(db_message.id),
                                 "content": db_message.content,
                                 "channel_id": str(db_message.channel_id),
                                 "sender_id": str(db_message.sender_id),
-                                "created_at": current_time.isoformat()
+                                "created_at": current_time.isoformat(),
+                                "updated_at": current_time.isoformat()
                             }
                         }
                         
@@ -414,8 +418,8 @@ async def chat_websocket(
                             "message": message_data["message"]
                         })
                         
-                        # Then broadcast to other channel members
-                        await manager.broadcast_to_channel(msg.channel_id, message_data)
+                        # Then broadcast to other channel members (excluding sender)
+                        await manager.broadcast_to_channel(msg.channel_id, message_data, user.id)
                         logger.info(f"Message created and broadcast: {db_message.id}")
                     except Exception as e:
                         logger.error(f"Error creating/broadcasting message: {str(e)}")

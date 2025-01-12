@@ -2,73 +2,65 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { ChatState, Channel, User } from '../../types';
 
 const initialState: ChatState = {
-  activeChannelId: null,
   channels: [],
-  users: {} as { [key: string]: User },
+  activeChannelId: null,
+  users: {},
   loading: false,
-  error: null,
+  error: null
 };
 
 const chatSlice = createSlice({
   name: 'chat',
   initialState,
   reducers: {
-    setActiveChannel: (state, action: PayloadAction<string>) => {
-      console.log('Setting active channel:', action.payload);
-      state.activeChannelId = action.payload;
-    },
-    
     setChannels: (state, action: PayloadAction<Channel[]>) => {
-      console.log('Setting channels:', action.payload);
       state.channels = action.payload;
     },
-    
+    setActiveChannel: (state, action: PayloadAction<string>) => {
+      state.activeChannelId = action.payload;
+    },
     addChannel: (state, action: PayloadAction<Channel>) => {
-      console.log('Adding channel:', action.payload);
       state.channels.push(action.payload);
     },
-    
     removeChannel: (state, action: PayloadAction<string>) => {
-      console.log('Removing channel:', action.payload);
       state.channels = state.channels.filter(channel => channel.id !== action.payload);
-    },
-    
-    setUsers: (state, action: PayloadAction<User[]>) => {
-      console.log('Setting users:', action.payload);
-      state.users = action.payload.reduce((acc, user) => {
-        acc[user.id] = user;
-        return acc;
-      }, {} as { [key: string]: User });
-    },
-    
-    updateUserStatus: (state, action: PayloadAction<{ userId: string; status: User['status'] }>) => {
-      console.log('Updating user status:', action.payload);
-      const user = state.users[action.payload.userId];
-      if (user) {
-        user.status = action.payload.status;
-        user.last_seen = new Date().toISOString();
+      if (state.activeChannelId === action.payload) {
+        state.activeChannelId = null;
       }
     },
-    
+    setUsers: (state, action: PayloadAction<{ [key: string]: User }>) => {
+      state.users = action.payload;
+    },
+    updateUserStatus: (state, action: PayloadAction<{ userId: string; status: 'online' | 'offline' | 'away' | 'busy' }>) => {
+      if (state.users[action.payload.userId]) {
+        state.users[action.payload.userId].status = action.payload.status;
+      }
+    },
+    updateChannelUnreadCount: (state, action: PayloadAction<{ channelId: string; count: number }>) => {
+      const channel = state.channels.find(ch => ch.id === action.payload.channelId);
+      if (channel) {
+        channel.unreadCount = action.payload.count;
+      }
+    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
-    
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
-    },
-  },
+    }
+  }
 });
 
 export const {
-  setActiveChannel,
   setChannels,
+  setActiveChannel,
   addChannel,
   removeChannel,
   setUsers,
   updateUserStatus,
+  updateChannelUnreadCount,
   setLoading,
-  setError,
+  setError
 } = chatSlice.actions;
 
 export default chatSlice.reducer; 
