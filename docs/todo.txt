@@ -11,28 +11,92 @@ make high-level analysis of the project X
 make high-level analysis of the frontend X
 
 identify bugs most critical to general functionality X
-fix the bugs
+fix the bugs X
 
-finish search functionality
-    - be able to click messages in the list and be taken there
+(proceed with adding features)
+
+finish search functionality X
+    - be able to click messages in the list and be taken there X
 
 move on with other features:
     - user panel on right instead of bottom left
     - current user profile and settings cog on bottom left
-    - emoji reactions
-        - use classic message board emojis
+    - emoji reactions X
+        Analyze our backend emoji reaction endpoint functions.
+        Use it to write a plan to implement emoji reactions in the frontend.
+        There should be a smiley face icon to the left of the message input.
+        The user should be able to click the icon to select an emoji.
+        The emoji should be displayed in the message input area.
+        Write a plan of action in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Be sure to reference files and their paths Use checkboxes to keep track of progress.
+
+        We can currently click a button and add emoji reactions to messages.
+        However, they are not displayed in the message list.
+        They are posted to the database, but not retrieved.
+        Look at every part of the app that deals with messages and reactions.
+        Write a plan of action to display reactions in the message list in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
     - files
-        - uploads
-        - downloads
-        - embedding
-    - user presence
+        - uploads X
+            Analyze our backend file upload endpoint functions. 
+            Use it to write a plan to implement file uploads in the frontend. 
+            There should be a paperclip icon to the left of the message input.
+            The user should be able to select a file from their computer.
+            The file should be displayed in the message input area.
+            Write a plan of action in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+
+        - downloads X
+            Analyze our backend file download endpoint functions.
+            Use it to write a plan to implement file downloads in the frontend.
+            The user should be able to click on a file in the message list and download it.
+            Write a plan of action in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+        - embedding X
+    - user presence X
+        Analyze our current infrastructure regarding user presence.
+        Write a plan of action to implement user presence in the frontend.
+        There should be a colored dot next to the user's name in the message list.
+        The dot should be green if the user is online, and red if the user is offline.
+        Write a plan of action to implement user presence in the frontend in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+
+_________________________________________________________________________________________________________________________________________________________________________________________________
+
+
+    Clean up project
+        - File structure
+    make todo list 
+    make sure backend documentation is up to date 
+    remove unnessary files from frontend 
+        Comb through the frontend of our app. Identify anything that doesn't actually get used by our app. Remove things we are not using and do not intend to use.
+    make sure all files are in the correct directory 
+    make sure all files are named correctly 
+    remove unused dependencies 
+    make sure requirements.txt is up to date (backend) 
+    make sure frontend npm configuration is correct and includes all necessary dependencies 
+
+
+    fix big bugs
+    - presence not working
+        - Prompt: Let's look at the code for the presence feature. We need to make sure that the presence feature is working correctly.
+        Write a plan of action to fix this issue in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+
     - user profiles
         - profile picture
         - status
     - improve thread support
+        - emoji reactions on replies X
+        - attachments on replies
     - improve channels
         - channel settings
+            - edit channel name
+            - edit channel description
+            - add members to private channels
+            - remove members from private channels
+            - Prompt: I would like to implement the following features for channel settings:
+                - edit channel name
+                - edit channel description
+                - add members to private channels
+                - remove members from private channels
+                Write a plan of action to implement these features in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
         - channel description
+            - Prompt: I would like to display channel description under the channel name at the top of the screen. Please help me implement this feature.
         - reorder channels
         - channel join
         - channel leave
@@ -44,18 +108,67 @@ move on with other features:
         - password change
         - account deletion
         - account recovery
+    - voice channels
+        - Prompt 1: We need to figure out how to stream audio over websockets. We will use this to implement voice channels. Help me implement this feature. We will start with a simple voice channel that allows the user to speak and hear themselves. We will use Opus encoding and decoding for the audio. Backend code will be written first, then frontend. Remember when planning to keep in mind that we will be also running the audio through a speech-to-text model.
+        Analyze our current codebase. Identify the parts of the codebase that will need to be modified to implement voice channels.
+        Write a plan of action to implement this in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress. Reference files and their paths.
+        - voice channel creation
+        - voice channel deletion
+        - voice channel join
+        - voice channel leave
+        - voice channel rename
+
+"if you want SSL, look into certbot"
+
+feature tweaking:
+    allow empty messages (only when there's an attachment) X
+    allow more file types to be uploaded, make sure videos are working
+        - Prompt: Let's add more file types to the upload functionality. We should be able to upload videos, images, and other files.
+    allow images to be expanded for user
+    add color change to @user string.
+    make reply text input area same as regular message input area
+
+
+
 
 known issues:
+
 
     channels should be sorted by creation date with oldest at the top X
     channel switching takes forever to respond X
     messages aren't posting live for the user X
     nothing comes up when reply option is selected X
-    
+
+    we're not rendering emoji reactions for replies X
+    emoji selector hides behind top bar X
+    emoji reactions and options show up over message text X
+    messages double load during pagination X
+        - Prompt: We want to make sure that emoji reactions and options do not show up over message text. Make the right margin of the message text area adhere to button placement.
+    search + pagination makes scroll bar snap to bottom after trying to scroll upload X
+        - We're having trouble with navigating to a searched message when pagination is required. When the user attempts to navigate to a serached message requiring pagination within the current channel, nothing happens visually. When a user attempts to navigate to a searched message requiring pagination in a different channel, the scroll bar snaps to the bottom of the page. Navigating to a searched message works as intended otherwise.
+
+        Write a plan of action to fix this issue in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+        - Prompt 2: Prompt 2: Currently, when a user clicks on a searched message to navigate to it, the app works as intended when the message does not need to be loaded beyond the current page. However, searching for a message that requires pagination will only work once before the browser page is refreshed.
+        Write a plan of action to fix this issue in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+    messages from other channels load during pagination (?) (no longer an issue)
+    chat should scroll to bottom when thread or image is clicked
+        - Prompt: We're having trouble with the chat not scrolling to the bottom when a thread or image is clicked. We need to find a way to make the chat scroll to the bottom when a thread or image is clicked.
+    logout button gone X
+        - Prompt: We're having trouble with the logout button being gone. We need to find a way to make the logout button appear to the right of the channel settings button.
+
+
+    have to clear browser cache when token expires X
+        - Prompt: We're having trouble with the token expiring and requiring the user to clear their browser cache. We need to find a way to keep the token from expiring. Let's make it so that the user is automatically logged out when the token expires. An expired token should result in returning the user to the login page.
+        Write a plan of action to fix this issue in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+
+
+        - 
     no option to delete messages
-    need to convert all timestamps read from the database to local time for the user before displaying them X
+        - Prompt: We're having trouble with the user not being able to delete messages. We need to find a way to allow the user to delete messages.
+    need to convert all timestamps read from the database to local time for the user before displaying them 
 
-
+    lain's name doesn't show up, only her user id number
+        - need to be adding her to all channels
 
 
 

@@ -4,6 +4,7 @@ import { addMessage, updateMessage, addReaction, removeReaction } from '../../st
 import { updateUserStatus } from '../../store/chat/chatSlice';
 import { Store } from 'redux';
 import { transformMessage } from '../../utils/messageTransform';
+import { logout } from '../../store/auth/authSlice';
 
 // Get WebSocket URL from environment variable or fallback to localhost
 const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
@@ -62,12 +63,19 @@ interface UserStatusMessage extends BaseWebSocketMessage {
   status: UserStatus;
 }
 
+interface BotMessageMessage extends BaseWebSocketMessage {
+  type: 'BOT_MESSAGE';
+  channelId: string;
+  message: RawMessage;
+}
+
 type WebSocketMessage = 
   | ReactionAddedMessage 
   | ReactionRemovedMessage 
   | NewMessageMessage 
   | UpdateMessageMessage 
   | UserStatusMessage 
+  | BotMessageMessage
   | BaseWebSocketMessage;
 
 function isReactionAddedMessage(message: WebSocketMessage): message is ReactionAddedMessage {
@@ -108,6 +116,12 @@ function isUserStatusMessage(message: WebSocketMessage): message is UserStatusMe
          'status' in message;
 }
 
+function isBotMessageMessage(message: WebSocketMessage): message is BotMessageMessage {
+  return message.type === 'BOT_MESSAGE' && 
+         'channelId' in message && 
+         'message' in message;
+}
+
 export class WebSocketService {
   private static instance: WebSocketService | null = null;
   private ws: WebSocket | null = null;
@@ -131,6 +145,14 @@ export class WebSocketService {
   private getAuthToken(): string | null {
     const state = store.getState();
     return state.auth?.token || null;
+  }
+
+  private handleConnectionError() {
+    console.error('WebSocket connection error - redirecting to login');
+    if (this.store) {
+      this.store.dispatch(logout());
+      window.location.href = '/login';
+    }
   }
 
   public connect() {
@@ -171,18 +193,29 @@ export class WebSocketService {
         console.log('WebSocket disconnected with code:', event.code, 'reason:', event.reason);
         console.log('Channels at disconnect:', Array.from(this.channels));
         this.stopPingInterval();
-        this.handleReconnect();
+        
+        // If the close was due to an authentication error (code 1008), redirect to login
+        if (event.code === 1008) {
+          this.handleConnectionError();
+        } else {
+          this.handleReconnect();
+        }
       };
 
       this.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         console.log('Channels at error:', Array.from(this.channels));
+        
+        // Handle connection error and redirect to login
+        this.handleConnectionError();
+        
         if (!this.isReconnecting) {
           this.handleReconnect();
         }
       };
     } catch (error) {
       console.error('Error creating WebSocket connection:', error);
+      this.handleConnectionError();
       if (!this.isReconnecting) {
         this.handleReconnect();
       }
@@ -279,71 +312,71 @@ export class WebSocketService {
 
   private handleMessage(event: MessageEvent) {
     try {
-      const data: WebSocketMessage = JSON.parse(event.data);
-      console.log('Parsed WebSocket message:', data);
+      const message: WebSocketMessage = JSON.parse(event.data);
+      console.log('Parsed WebSocket message:', message);
 
-      if (isReactionAddedMessage(data)) {
-        const { channelId, messageId, reaction } = data.payload;
+      if (isReactionAddedMessage(message)) {
+        const { channelId, messageId, reaction } = message.payload;
         store.dispatch(addReaction({ channelId, messageId, reaction }));
-        return;
-      }
-
-      if (isReactionRemovedMessage(data)) {
-        const { channelId, messageId, userId, emoji } = data.payload;
+      } else if (isReactionRemovedMessage(message)) {
+        const { channelId, messageId, userId, emoji } = message.payload;
         store.dispatch(removeReaction({ channelId, messageId, userId, emoji }));
-        return;
-      }
-
-      if (isNewMessageMessage(data)) {
-        console.log('Handling NEW_MESSAGE:', data);
-        const transformedMessage = transformMessage(data.message);
-        if (data.isReply && data.parentId) {
-          transformedMessage.parentId = data.parentId;
+      } else if (isNewMessageMessage(message)) {
+        console.log('Handling NEW_MESSAGE:', message);
+        const transformedMessage = transformMessage(message.message);
+        if (message.isReply && message.parentId) {
+          transformedMessage.parentId = message.parentId;
         }
         store.dispatch(addMessage({ 
-          channelId: data.channelId, 
+          channelId: message.channelId, 
           message: transformedMessage
         }));
-        return;
-      }
-
-      if (isUpdateMessageMessage(data)) {
-        console.log('Handling UPDATE_MESSAGE:', data);
+      } else if (isUpdateMessageMessage(message)) {
+        console.log('Handling UPDATE_MESSAGE:', message);
         const baseMessage: RawMessage = {
-          id: data.id,
-          content: data.updates.content || '',
-          channel_id: data.channelId,
-          sender_id: data.updates.sender_id || '',
-          created_at: data.updates.created_at || new Date().toISOString(),
-          updated_at: data.updates.updated_at,
-          parent_id: data.updates.parent_id,
-          reply_count: data.updates.reply_count,
-          reactions: Array.isArray(data.updates.reactions) ? data.updates.reactions : [],
-          attachments: Array.isArray(data.updates.attachments) ? data.updates.attachments : []
+          id: message.id,
+          content: message.updates.content || '',
+          channel_id: message.channelId,
+          sender_id: message.updates.sender_id || '',
+          created_at: message.updates.created_at || new Date().toISOString(),
+          updated_at: message.updates.updated_at,
+          parent_id: message.updates.parent_id,
+          reply_count: message.updates.reply_count,
+          reactions: Array.isArray(message.updates.reactions) ? message.updates.reactions : [],
+          attachments: Array.isArray(message.updates.attachments) ? message.updates.attachments : []
         };
         const transformedUpdates = transformMessage(baseMessage);
         store.dispatch(updateMessage({ 
-          channelId: data.channelId,
-          messageId: data.id,
+          channelId: message.channelId,
+          messageId: message.id,
           message: transformedUpdates
         }));
-        return;
-      }
-
-      if (isUserStatusMessage(data)) {
-        console.log('Handling USER_STATUS:', data);
+      } else if (isUserStatusMessage(message)) {
+        console.log('Handling USER_STATUS:', message);
         store.dispatch(updateUserStatus({
-          userId: data.userId,
-          status: data.status
+          userId: message.userId,
+          status: message.status
         }));
+      } else if (isBotMessageMessage(message)) {
+        const { channelId, message: botMessage } = message;
+        const transformedMessage = transformMessage(botMessage);
+        
+        if (this.store) {
+          this.store.dispatch(addMessage({
+            channelId,
+            message: {
+              ...transformedMessage,
+              isBot: true
+            }
+          }));
+        }
+      }
+
+      if (message.type === 'pong') {
         return;
       }
 
-      if (data.type === 'pong') {
-        return;
-      }
-
-      console.warn('Unknown message type:', data.type);
+      console.warn('Unknown message type:', message.type);
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
     }

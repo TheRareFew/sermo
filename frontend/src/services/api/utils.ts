@@ -1,4 +1,5 @@
 import { getAuthToken } from './auth';
+import { handleUnauthorizedResponse } from './interceptor';
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'headers'> {
   requiresAuth?: boolean;
@@ -45,6 +46,10 @@ export async function apiRequest<T>(
       credentials: 'include',
       ...rest,
     });
+
+    if (response.status === 401) {
+      return handleUnauthorizedResponse({ status: 401 });
+    }
 
     console.log(`Response status for ${endpoint}:`, response.status);
     console.log(`Response headers for ${endpoint}:`, Object.fromEntries(response.headers.entries()));

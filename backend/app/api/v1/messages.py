@@ -92,8 +92,13 @@ async def create_message(
 ):
     """Create new message in channel"""
     try:
-        if not message.content.strip():
-            raise HTTPException(status_code=422, detail="Message content cannot be empty")
+        if not message.is_valid:
+            raise HTTPException(status_code=422, detail="Message must have either content or file attachments")
+
+        # Set default content for file-only messages
+        content = message.content
+        if not content and message.file_ids:
+            content = "file"
 
         # Check channel access
         channel = db.query(Channel).filter(Channel.id == channel_id).first()
@@ -118,7 +123,7 @@ async def create_message(
 
         # Create message
         db_message = MessageModel(
-            content=message.content,
+            content=content,  # Use potentially modified content
             channel_id=channel_id,
             sender_id=current_user.id,
             has_attachments=bool(message.file_ids)
@@ -159,8 +164,13 @@ async def update_message(
 ):
     """Update message"""
     try:
-        if not message.content.strip():
-            raise HTTPException(status_code=422, detail="Message content cannot be empty")
+        if not message.is_valid:
+            raise HTTPException(status_code=422, detail="Message must have either content or file attachments")
+
+        # Set default content for file-only messages
+        content = message.content
+        if not content and message.file_ids:
+            content = "file"
 
         db_message = db.query(MessageModel).filter(MessageModel.id == message_id).first()
         if not db_message:
@@ -171,8 +181,16 @@ async def update_message(
             raise HTTPException(status_code=403, detail="Not authorized to update this message")
 
         # Update message
-        db_message.content = message.content
+        db_message.content = content  # Use potentially modified content
         db_message.updated_at = datetime.utcnow()
+        
+        # Update file associations if file_ids provided
+        if message.file_ids:
+            files = db.query(FileModel).filter(FileModel.id.in_(message.file_ids)).all()
+            for file in files:
+                file.message_id = db_message.id
+            db_message.has_attachments = True
+        
         db.commit()
         db.refresh(db_message)
 
@@ -180,7 +198,11 @@ async def update_message(
         await manager.broadcast_message_update(
             db_message.channel_id,
             str(message_id),
-            {"content": message.content, "updated_at": db_message.updated_at.isoformat()}
+            {
+                "content": message.content,
+                "updated_at": db_message.updated_at.isoformat(),
+                "has_attachments": db_message.has_attachments
+            }
         )
 
         return db_message
@@ -258,8 +280,13 @@ async def create_message_reply(
 ):
     """Create reply to message"""
     try:
-        if not reply.content.strip():
-            raise HTTPException(status_code=422, detail="Message content cannot be empty")
+        if not reply.is_valid:
+            raise HTTPException(status_code=422, detail="Message must have either content or file attachments")
+
+        # Set default content for file-only messages
+        content = reply.content
+        if not content and reply.file_ids:
+            content = "file"
 
         # Check parent message exists and user has access
         parent_message = db.query(MessageModel).filter(MessageModel.id == message_id).first()
@@ -272,18 +299,27 @@ async def create_message_reply(
 
         # Create reply
         db_reply = MessageModel(
-            content=reply.content,
+            content=content,  # Use potentially modified content
             channel_id=parent_message.channel_id,
             sender_id=current_user.id,
-            parent_id=message_id
+            parent_id=message_id,
+            has_attachments=bool(reply.file_ids)
         )
         db.add(db_reply)
         db.commit()
         db.refresh(db_reply)
         
+        # Update file associations if file_ids provided
+        if reply.file_ids:
+            files = db.query(FileModel).filter(FileModel.id.in_(reply.file_ids)).all()
+            for file in files:
+                file.message_id = db_reply.id
+            db.commit()
+        
         # Refresh to load relationships
         db_reply = db.query(MessageModel).options(
-            joinedload(MessageModel.sender)
+            joinedload(MessageModel.sender),
+            joinedload(MessageModel.files)
         ).filter(MessageModel.id == db_reply.id).first()
 
         # Broadcast the new reply via WebSocket

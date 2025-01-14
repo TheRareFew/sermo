@@ -12,6 +12,7 @@ This document provides a comprehensive overview of all available API endpoints i
 - [Reactions](#reactions)
 - [Search](#search)
 - [WebSocket Connections](#websocket-connections)
+- [AI Features](#ai-features)
 
 ## Running Locally
 
@@ -494,4 +495,27 @@ Error response format:
 {
   "detail": "Error message"
 }
-``` 
+```
+
+## AI Features
+
+### Send Message to Bot
+- **POST** `/api/v1/ai/message`
+- Send a message to the AI bot (@terrence) and receive a response
+- Authentication: Required
+- Request Body:
+  ```json
+  {
+    "message": "string"
+  }
+  ```
+- Response:
+  ```json
+  {
+    "response": "string"
+  }
+  ```
+- Notes:
+  - The bot uses context from previous messages and documentation to provide relevant responses
+  - Responses may include follow-up questions or suggestions
+  - Rate limits may apply to prevent abuse 

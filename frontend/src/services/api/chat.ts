@@ -27,7 +27,7 @@ interface CreateChannelParams {
 }
 
 interface SendMessageParams {
-  content: string;
+  content?: string;
   channelId: string;
   parentId?: string;
   fileId?: number;
@@ -46,7 +46,12 @@ export const getChannels = async (): Promise<Channel[]> => {
   }
 };
 
-export const getChannelMessages = async (channelId: string, limit: number = 50, skip: number = 0): Promise<Message[]> => {
+export const getChannelMessages = async (
+  channelId: string,
+  limit: number = 50,
+  skip: number = 0,
+  targetMessageId?: string
+): Promise<Message[]> => {
   console.log(`[DEBUG] Fetching messages for channel ${channelId} with limit ${limit} and skip ${skip}...`);
   try {
     if (!channelId) {
@@ -61,7 +66,12 @@ export const getChannelMessages = async (channelId: string, limit: number = 50, 
       throw new Error('Invalid skip value');
     }
 
-    const messages = await apiRequest<Message[]>(`/channels/${channelId}/messages?limit=${limit}&skip=${skip}`);
+    let endpoint = `/channels/${channelId}/messages?limit=${limit}&skip=${skip}`;
+    if (targetMessageId) {
+      endpoint += `&target_message_id=${targetMessageId}`;
+    }
+
+    const messages = await apiRequest<Message[]>(endpoint);
     console.log('[DEBUG] Raw messages from API:', JSON.stringify(messages, null, 2));
 
     // Validate and transform messages
@@ -117,11 +127,50 @@ export const getChannelUsers = async (channelId: string): Promise<User[]> => {
 export const createChannel = async (params: CreateChannelParams): Promise<Channel> => {
   console.log('Creating channel:', params);
   try {
+    // First, get Lain's user ID
+    console.log('Fetching all users to find Lain...');
+    const users = await apiRequest<User[]>('/users');
+    console.log('All users:', users);
+    
+    const lain = users.find(user => user.username.toLowerCase() === 'lain');
+    if (!lain) {
+      console.error('Lain user not found in users list:', users.map(u => u.username));
+      // Create channel without Lain for now
+      console.log('Creating channel without Lain...');
+      const channel = await apiRequest<Channel>('/channels', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      
+      // Try to add Lain later through the members endpoint
+      try {
+        console.log('Attempting to add Lain through members endpoint...');
+        await apiRequest(`/channels/${channel.id}/members`, {
+          method: 'POST',
+          body: JSON.stringify({ username: 'lain' }),
+        });
+      } catch (memberError) {
+        console.error('Failed to add Lain as member:', memberError);
+      }
+      
+      return channel;
+    }
+
+    // Ensure member_ids array exists and includes Lain
+    const member_ids = params.member_ids || [];
+    if (!member_ids.includes(lain.id)) {
+      console.log('Adding Lain with ID:', lain.id);
+      member_ids.push(lain.id);
+    }
+
     const channel = await apiRequest<Channel>('/channels', {
       method: 'POST',
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        ...params,
+        member_ids
+      }),
     });
-    console.log('Created channel:', channel);
+    console.log('Channel created:', channel);
     return channel;
   } catch (error) {
     console.error('Error creating channel:', error);

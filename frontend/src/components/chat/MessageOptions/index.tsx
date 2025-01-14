@@ -13,11 +13,17 @@ interface MessageOptionsProps {
   onReactionRemove?: (emoji: string) => void;
 }
 
+interface PickerPosition {
+  top?: number;
+  bottom?: number;
+  right?: number;
+}
+
 const OptionsContainer = styled.div`
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 `;
 
 const MenuTrigger = styled.button`
@@ -26,7 +32,7 @@ const MenuTrigger = styled.button`
   color: ${props => props.theme.colors.text};
   cursor: pointer;
   font-family: 'Courier New', monospace;
-  padding: 2px 6px;
+  padding: 0px 4px;
   font-size: inherit;
 
   &:hover {
@@ -67,15 +73,16 @@ const MenuItem = styled.button`
 `;
 
 const EmojiButton = styled(MenuTrigger)`
-  padding: 2px 4px;
+  padding: 0px 4px;
 `;
 
-const EmojiPickerWrapper = styled.div`
-  position: absolute;
-  bottom: 100%;
-  right: 0;
-  margin-bottom: 4px;
-  z-index: 100;
+const EmojiPickerWrapper = styled.div<{ position: PickerPosition }>`
+  position: fixed;
+  ${props => props.position.top !== undefined && `top: ${props.position.top}px`};
+  ${props => props.position.bottom !== undefined && `bottom: ${props.position.bottom}px`};
+  ${props => props.position.right !== undefined && `right: ${props.position.right}px`};
+  z-index: 9999;
+  margin: 4px;
 `;
 
 const MessageOptions: React.FC<MessageOptionsProps> = ({
@@ -89,6 +96,8 @@ const MessageOptions: React.FC<MessageOptionsProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState<PickerPosition>({ right: 0 });
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,6 +113,30 @@ const MessageOptions: React.FC<MessageOptionsProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (showEmojiPicker && emojiButtonRef.current) {
+      const buttonRect = emojiButtonRef.current.getBoundingClientRect();
+      const spaceAbove = buttonRect.top;
+      const spaceBelow = window.innerHeight - buttonRect.bottom;
+      const pickerHeight = 435; // Approximate height of the emoji picker
+      const rightOffset = window.innerWidth - buttonRect.right;
+
+      if (spaceAbove > pickerHeight || spaceAbove > spaceBelow) {
+        // Show above the button
+        setPickerPosition({
+          bottom: window.innerHeight - buttonRect.top,
+          right: rightOffset
+        });
+      } else {
+        // Show below the button
+        setPickerPosition({
+          top: buttonRect.bottom,
+          right: rightOffset
+        });
+      }
+    }
+  }, [showEmojiPicker]);
 
   const handleClose = () => {
     setIsOpen(false);
@@ -135,14 +168,16 @@ const MessageOptions: React.FC<MessageOptionsProps> = ({
 
   return (
     <OptionsContainer ref={menuRef}>
-      <EmojiButton 
+      <EmojiButton
+        ref={emojiButtonRef}
         onClick={toggleEmojiPicker}
-        title="Add reaction"
+        aria-label="Add reaction"
       >
         :-)
       </EmojiButton>
+      
       {showEmojiPicker && (
-        <EmojiPickerWrapper>
+        <EmojiPickerWrapper position={pickerPosition}>
           <Picker 
             data={data} 
             onEmojiSelect={handleEmojiSelect}

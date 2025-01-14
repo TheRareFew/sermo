@@ -3,20 +3,19 @@ import styled from 'styled-components';
 import { StoreMessage } from '../../../types';
 
 interface ReplyModalProps {
-  isOpen: boolean;
+  message: StoreMessage;
   onClose: () => void;
   onSubmit: (content: string) => void;
-  parentMessage: StoreMessage;
 }
 
-const ModalOverlay = styled.div<{ isOpen: boolean }>`
+const ModalOverlay = styled.div`
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.5);
-  display: ${props => props.isOpen ? 'flex' : 'none'};
+  display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1000;
@@ -82,10 +81,9 @@ const Button = styled.button<{ primary?: boolean }>`
 `;
 
 const ReplyModal: React.FC<ReplyModalProps> = ({
-  isOpen,
+  message,
   onClose,
-  onSubmit,
-  parentMessage
+  onSubmit
 }) => {
   const [content, setContent] = useState('');
 
@@ -106,11 +104,11 @@ const ReplyModal: React.FC<ReplyModalProps> = ({
   };
 
   return (
-    <ModalOverlay isOpen={isOpen} onClick={onClose}>
+    <ModalOverlay onClick={onClose}>
       <ModalContent onClick={e => e.stopPropagation()}>
         <Title>Reply to Message</Title>
         <ParentMessage>
-          {parentMessage.content}
+          {message.content}
         </ParentMessage>
         <TextArea
           value={content}

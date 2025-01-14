@@ -2,20 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { ThemeProvider } from 'styled-components';
 import { ToastContainer } from 'react-toastify';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import 'react-toastify/dist/ReactToastify.css';
-import LoginForm from './components/auth/LoginForm';
-import SignupForm from './components/auth/SignupForm';
-import ForgotPasswordForm from './components/auth/ForgotPasswordForm';
+import LoginForm from './components/auth/LoginForm/index';
+import SignupForm from './components/auth/SignupForm/index';
+import ForgotPasswordForm from './components/auth/ForgotPasswordForm/index';
 import MainLayout from './components/layout/MainLayout';
 import { theme } from './styles/themes/default';
 import { RootState } from './types';
 import WebSocketService from './services/websocket';
 
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 const App: React.FC = () => {
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const [currentView, setCurrentView] = useState<'login' | 'signup' | 'forgot-password'>('login');
 
-  // Reset to login view when logging out
   useEffect(() => {
     if (!isAuthenticated) {
       setCurrentView('login');
@@ -29,30 +39,42 @@ const App: React.FC = () => {
     console.log('API URL:', process.env.REACT_APP_API_URL);
   }, []);
 
+  const renderAuthContent = () => {
+    switch (currentView) {
+      case 'login':
+        return (
+          <LoginForm
+            onSignupClick={() => setCurrentView('signup')}
+            onForgotPasswordClick={() => setCurrentView('forgot-password')}
+          />
+        );
+      case 'signup':
+        return (
+          <SignupForm
+            onLoginClick={() => setCurrentView('login')}
+          />
+        );
+      case 'forgot-password':
+        return (
+          <ForgotPasswordForm
+            onLoginClick={() => setCurrentView('login')}
+          />
+        );
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
-      {!isAuthenticated ? (
-        <>
-          {currentView === 'login' && (
-            <LoginForm
-              onSignupClick={() => setCurrentView('signup')}
-              onForgotPasswordClick={() => setCurrentView('forgot-password')}
-            />
-          )}
-          {currentView === 'signup' && (
-            <SignupForm
-              onLoginClick={() => setCurrentView('login')}
-            />
-          )}
-          {currentView === 'forgot-password' && (
-            <ForgotPasswordForm
-              onLoginClick={() => setCurrentView('login')}
-            />
-          )}
-        </>
-      ) : (
-        <MainLayout />
-      )}
+      <Routes>
+        <Route path="/login" element={
+          isAuthenticated ? <Navigate to="/" replace /> : renderAuthContent()
+        } />
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        } />
+      </Routes>
       <ToastContainer
         position="top-right"
         autoClose={3000}

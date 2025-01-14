@@ -10,13 +10,14 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
     full_name = Column(String)
-    hashed_password = Column(String)
+    hashed_password = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     profile_picture_url = Column(String, nullable=True)
     status = Column(String, default="offline")
     last_seen = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    is_bot = Column(Boolean, default=False)
 
     # Relationships
     messages = relationship("Message", back_populates="sender")

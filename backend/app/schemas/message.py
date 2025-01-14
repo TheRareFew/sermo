@@ -5,16 +5,31 @@ from .reaction import Reaction
 from .file import File
 
 class MessageBase(BaseModel):
-    content: constr(min_length=1, strip_whitespace=True) = Field(..., description="Message content")
+    content: Optional[str] = Field(None, description="Message content")
 
 class MessageCreate(MessageBase):
     file_ids: Optional[List[int]] = Field(default=None, description="List of file IDs to attach to the message")
+    
+    @property
+    def is_valid(self) -> bool:
+        """A message is valid if it has either content or file attachments"""
+        return bool((self.content and self.content.strip()) or self.file_ids)
 
 class MessageUpdate(MessageBase):
-    pass
+    file_ids: Optional[List[int]] = Field(default=None, description="List of file IDs to attach to the message")
+    
+    @property
+    def is_valid(self) -> bool:
+        """A message is valid if it has either content or file attachments"""
+        return bool((self.content and self.content.strip()) or self.file_ids)
 
 class MessageReply(MessageBase):
-    pass
+    file_ids: Optional[List[int]] = Field(default=None, description="List of file IDs to attach to the message")
+    
+    @property
+    def is_valid(self) -> bool:
+        """A message is valid if it has either content or file attachments"""
+        return bool((self.content and self.content.strip()) or self.file_ids)
 
 class Message(MessageBase):
     id: int

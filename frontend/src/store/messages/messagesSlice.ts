@@ -109,20 +109,63 @@ const messagesSlice = createSlice({
       
       console.log('Updated messages state:', state.messagesByChannel[channelId]);
     },
-    prependMessages: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[] }>) => {
-      const { channelId, messages } = action.payload;
-      console.log('Prepending messages:', { channelId, messages });
+    prependMessages: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[]; replace?: boolean }>) => {
+      const { channelId, messages, replace } = action.payload;
+      console.log('Prepending messages:', { channelId, messages, replace });
       if (!state.messagesByChannel[channelId]) {
         state.messagesByChannel[channelId] = [];
       }
-      state.messagesByChannel[channelId].unshift(...messages.map(message => ({
-        ...message,
-        reactions: message.reactions || [],
-        attachments: message.attachments || [],
-        replyCount: message.replyCount || 0,
-        isExpanded: false,
-        repliesLoaded: false
-      })));
+
+      // First, separate replies from main messages
+      const mainMessages: StoreMessage[] = [];
+      const repliesByParentId: { [key: string]: StoreMessage[] } = {};
+
+      messages.forEach(message => {
+        if (message.parentId) {
+          // This is a reply
+          if (!repliesByParentId[message.parentId]) {
+            repliesByParentId[message.parentId] = [];
+          }
+          repliesByParentId[message.parentId].push({
+            ...message,
+            reactions: message.reactions || [],
+            attachments: message.attachments || [],
+            replyCount: 0,
+            isExpanded: false,
+            repliesLoaded: false
+          });
+        } else {
+          // This is a main message
+          mainMessages.push({
+            ...message,
+            reactions: message.reactions || [],
+            attachments: message.attachments || [],
+            replyCount: message.replyCount || 0,
+            isExpanded: false,
+            repliesLoaded: false,
+            replies: []
+          });
+        }
+      });
+
+      // Now attach replies to their parent messages
+      mainMessages.forEach(message => {
+        if (repliesByParentId[message.id]) {
+          message.replies = repliesByParentId[message.id];
+          message.replyCount = repliesByParentId[message.id].length;
+        }
+      });
+
+      if (replace) {
+        // Replace all messages in the channel
+        state.messagesByChannel[channelId] = mainMessages;
+      } else {
+        // Merge with existing messages, avoiding duplicates
+        const existingIds = new Set(state.messagesByChannel[channelId].map(m => m.id));
+        const newMainMessages = mainMessages.filter(m => !existingIds.has(m.id));
+        state.messagesByChannel[channelId].unshift(...newMainMessages);
+      }
+      
       console.log('Updated messages state:', state.messagesByChannel[channelId]);
     },
     updateMessage: (state, action: PayloadAction<{ channelId: string; messageId: string; message: Partial<StoreMessage> }>) => {
@@ -163,10 +206,12 @@ const messagesSlice = createSlice({
 
       console.log('Current message state:', messages[messageIndex]);
       
-      // Toggle the isExpanded state
+      // Toggle both isExpanded and showReplies states
+      const newState = !messages[messageIndex].isExpanded;
       messages[messageIndex] = {
         ...messages[messageIndex],
-        isExpanded: !messages[messageIndex].isExpanded
+        isExpanded: newState,
+        showReplies: newState
       };
       
       // Force a state update by creating a new array reference
@@ -188,28 +233,49 @@ const messagesSlice = createSlice({
         return;
       }
 
+      // First, try to find the message in the main messages array
       const messageIndex = messages.findIndex(m => m.id === messageId);
-      if (messageIndex === -1) {
-        console.warn('Message not found:', messageId);
-        return;
+      if (messageIndex !== -1) {
+        const message = messages[messageIndex];
+        if (!message.reactions) {
+          message.reactions = [];
+        }
+        
+        const existingIndex = message.reactions.findIndex(r => 
+          r.userId === reaction.userId && r.emoji === reaction.emoji
+        );
+        
+        if (existingIndex === -1) {
+          message.reactions = [...message.reactions, reaction];
+          state.messagesByChannel[channelId] = [...messages];
+          console.log('Added reaction to main message, new state:', state.messagesByChannel[channelId][messageIndex]);
+          return;
+        }
       }
 
-      const message = messages[messageIndex];
-      if (!message.reactions) {
-        message.reactions = [];
-      }
-      
-      const existingIndex = message.reactions.findIndex(r => 
-        r.userId === reaction.userId && r.emoji === reaction.emoji
-      );
-      console.log('Existing reaction index:', existingIndex);
-      
-      if (existingIndex === -1) {
-        message.reactions = [...message.reactions, reaction];
-        state.messagesByChannel[channelId] = [...messages];
-        console.log('Added reaction, new state:', state.messagesByChannel[channelId][messageIndex]);
-      } else {
-        console.log('Reaction already exists, skipping');
+      // If not found in main messages, look for it in replies
+      for (const mainMessage of messages) {
+        if (mainMessage.replies) {
+          const replyIndex = mainMessage.replies.findIndex(r => r.id === messageId);
+          if (replyIndex !== -1) {
+            const reply = mainMessage.replies[replyIndex];
+            if (!reply.reactions) {
+              reply.reactions = [];
+            }
+
+            const existingIndex = reply.reactions.findIndex(r =>
+              r.userId === reaction.userId && r.emoji === reaction.emoji
+            );
+
+            if (existingIndex === -1) {
+              reply.reactions = [...reply.reactions, reaction];
+              // Force a state update
+              state.messagesByChannel[channelId] = [...messages];
+              console.log('Added reaction to reply, new state:', mainMessage.replies[replyIndex]);
+            }
+            return;
+          }
+        }
       }
     },
     removeReaction: (state, action: PayloadAction<{ channelId: string; messageId: string; userId: string; emoji: string }>) => {
@@ -227,28 +293,51 @@ const messagesSlice = createSlice({
         return;
       }
 
+      // First, try to find the message in the main messages array
       const messageIndex = messages.findIndex(m => m.id === messageId);
-      if (messageIndex === -1) {
-        console.warn('Message not found:', messageId);
-        return;
+      if (messageIndex !== -1) {
+        const message = messages[messageIndex];
+        if (!message.reactions) {
+          console.warn('Message has no reactions:', messageId);
+          return;
+        }
+        
+        const initialLength = message.reactions.length;
+        message.reactions = message.reactions.filter(r => 
+          !(r.userId === userId && r.emoji === emoji)
+        );
+        
+        if (message.reactions.length !== initialLength) {
+          state.messagesByChannel[channelId] = [...messages];
+          console.log('Removed reaction from main message, new state:', state.messagesByChannel[channelId][messageIndex]);
+          return;
+        }
       }
 
-      const message = messages[messageIndex];
-      if (!message.reactions) {
-        console.warn('Message has no reactions:', messageId);
-        return;
-      }
-      
-      const initialLength = message.reactions.length;
-      message.reactions = message.reactions.filter(r => 
-        !(r.userId === userId && r.emoji === emoji)
-      );
-      
-      if (message.reactions.length !== initialLength) {
-        state.messagesByChannel[channelId] = [...messages];
-        console.log('Removed reaction, new state:', state.messagesByChannel[channelId][messageIndex]);
-      } else {
-        console.log('No reaction was removed');
+      // If not found in main messages, look for it in replies
+      for (const mainMessage of messages) {
+        if (mainMessage.replies) {
+          const replyIndex = mainMessage.replies.findIndex(r => r.id === messageId);
+          if (replyIndex !== -1) {
+            const reply = mainMessage.replies[replyIndex];
+            if (!reply.reactions) {
+              console.warn('Reply has no reactions:', messageId);
+              return;
+            }
+
+            const initialLength = reply.reactions.length;
+            reply.reactions = reply.reactions.filter(r =>
+              !(r.userId === userId && r.emoji === emoji)
+            );
+
+            if (reply.reactions.length !== initialLength) {
+              // Force a state update
+              state.messagesByChannel[channelId] = [...messages];
+              console.log('Removed reaction from reply, new state:', mainMessage.replies[replyIndex]);
+            }
+            return;
+          }
+        }
       }
     },
   },

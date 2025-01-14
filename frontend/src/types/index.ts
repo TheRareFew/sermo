@@ -6,6 +6,7 @@ export interface User {
   username: string;
   status: UserStatus;
   avatar_url?: string;
+  isBot?: boolean;
 }
 
 // Base types
@@ -43,6 +44,7 @@ export interface RawMessage {
   reactions: Reaction[];
   attachments: any[];
   user?: User;
+  isBot?: boolean;
 }
 
 export interface Message {
@@ -76,6 +78,8 @@ export interface StoreMessage {
   repliesLoaded?: boolean;
   replies?: StoreMessage[];
   has_attachments: boolean;
+  isBot?: boolean;
+  showReplies?: boolean;
 }
 
 // Attachment type

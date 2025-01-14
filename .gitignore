@@ -2,3 +2,15 @@
 *.test.txt
 *_test.txt
 large_test_file.txt
+
+# Ignore uploads directory
+backend/uploads/
+backend/uploads/*
+
+# Ignore all env files
+.env
+.env.*
+*.env
+node_modules
+node_modules
+ai_demo/

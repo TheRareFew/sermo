@@ -15,6 +15,7 @@ class Message(Base):
     channel_id = Column(Integer, ForeignKey("channels.id"))
     parent_id = Column(Integer, ForeignKey("messages.id"), nullable=True)  # For threads/replies
     has_attachments = Column(Boolean, nullable=False, default=False)  # Ensure column is created with default value
+    is_bot = Column(Boolean, nullable=False, default=False)  # Add is_bot field
     
     # Relationships
     sender = relationship("User", back_populates="messages")

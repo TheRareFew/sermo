@@ -384,62 +384,22 @@ const MainLayout: React.FC = () => {
 
   const handleSelectMessage = async (channelId: string, messageId: string) => {
     try {
+      console.log('[DEBUG] handleSelectMessage called:', { channelId, messageId });
       isSearchNavigation.current = true;
-      setSelectedMessageId(null); // Reset selected message first
-      setInitialScrollComplete(false); // Reset scroll state
 
       // If switching channels
       if (channelId !== activeChannelId) {
+        console.log('[DEBUG] Switching channels for message navigation');
         await dispatch(setActiveChannel(channelId));
-        
-        try {
-          // First, try to get the message's position in the channel
-          const messagePosition = await getMessagePosition(channelId, messageId);
-          const batchSize = 50;
-          
-          // Calculate how many messages we need to load to get from the target message to the most recent
-          const totalMessagesToLoad = messagePosition + batchSize; // Add one batch for context before the target
-          const batchesToLoad = Math.ceil(totalMessagesToLoad / batchSize);
-          
-          // Load all messages from position 0 to the target message's position
-          const messagesPromises = Array.from({ length: batchesToLoad }, (_, i) => {
-            const skip = i * batchSize;
-            return getChannelMessages(channelId, batchSize, skip);
-          });
-
-          const messagesBatches = await Promise.all(messagesPromises);
-          const allMessages = messagesBatches.flat();
-          
-          if (allMessages.length > 0) {
-            const transformedMessages = allMessages.map(transformMessage);
-            await dispatch(setMessages({
-              channelId,
-              messages: transformedMessages
-            }));
-          }
-        } catch (error) {
-          console.error('Error loading messages:', error);
-          // Fallback to loading messages around the current time
-          const messages = await getChannelMessages(channelId, 50, 0);
-          if (messages.length > 0) {
-            const transformedMessages = messages.map(transformMessage);
-            await dispatch(setMessages({
-              channelId,
-              messages: transformedMessages
-            }));
-          }
-        }
       }
 
-      // Small delay to ensure messages are rendered before scrolling
-      setTimeout(() => {
-        setSelectedMessageId(messageId);
-        setSearchResults(null);
-        isSearchNavigation.current = false;
-      }, 100);
-      
+      // Set the selected message ID after channel switch
+      setSelectedMessageId(messageId);
+      setInitialScrollComplete(false);
+      setSearchResults(null);
+      isSearchNavigation.current = false;
     } catch (error) {
-      console.error('Error selecting message:', error);
+      console.error('[DEBUG] Error selecting message:', error);
       dispatch(setError('Failed to navigate to message'));
       isSearchNavigation.current = false;
     }
@@ -593,51 +553,46 @@ const MainLayout: React.FC = () => {
             />
           ))}
         </UserList>
+        <LogoutButton onClick={handleLogout}>
+          Logout
+        </LogoutButton>
       </Sidebar>
 
       <ChatArea>
         <ChatHeader>
+          <h1>{activeChannel?.name || 'Select a Channel'}</h1>
           {activeChannel && (
-            <>
-              <h1>{activeChannel.name}</h1>
-              <ChannelActions>
-                <SearchContainer>
-                  <SearchBar onSearch={handleSearch} />
-                  {isSearching && <div>Searching...</div>}
-                  {searchResults && (
-                    <SearchResults
-                      results={searchResults}
-                      isLoading={isSearching}
-                      onClose={() => setSearchResults(null)}
-                      onSelectChannel={handleSelectChannel}
-                      onSelectMessage={handleSelectMessage}
-                      onSelectFile={handleSelectFile}
-                    />
-                  )}
-                </SearchContainer>
-                <SettingsButton onClick={() => setIsSettingsOpen(true)}>
-                  Settings
-                </SettingsButton>
-                <LogoutButton onClick={handleLogout}>
-                  Logout
-                </LogoutButton>
-              </ChannelActions>
-            </>
+            <ChannelActions>
+              <SearchContainer>
+                <SearchBar
+                  onSearch={handleSearch}
+                />
+                {searchResults && (
+                  <SearchResults
+                    results={searchResults}
+                    onSelectChannel={handleSelectChannel}
+                    onSelectMessage={handleSelectMessage}
+                    onSelectFile={handleSelectFile}
+                    onClose={() => setSearchResults(null)}
+                  />
+                )}
+              </SearchContainer>
+              <SettingsButton onClick={() => setIsSettingsOpen(true)}>
+                Settings
+              </SettingsButton>
+            </ChannelActions>
           )}
         </ChatHeader>
-
         <MessageList
           ref={messageListRef}
           messages={channelMessages}
           selectedMessageId={selectedMessageId}
           initialScrollComplete={initialScrollComplete}
           channelId={activeChannelId}
+          targetMessageId={selectedMessageId}
         />
-        
         <ChatInput>
-          <MessageInput
-            channelId={activeChannelId}
-          />
+          <MessageInput channelId={activeChannelId} />
         </ChatInput>
       </ChatArea>
 

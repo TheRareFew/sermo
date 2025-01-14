@@ -12,6 +12,7 @@ from ..models.channel import Channel, channel_members
 from ..models.message import Message
 from ..models.file import File
 from ..models.presence import Presence
+from ..models.reaction import Reaction
 from ..auth.security import get_password_hash
 
 # Configure logging
@@ -130,9 +131,11 @@ def create_test_files(db: Session, messages: List[Message]) -> List[File]:
             filename=f"{fake.word()}{extension}",
             file_type=file_type,
             file_size=random.randint(1000, 5000000),  # Random size between 1KB and 5MB
-            file_url=fake.file_path(extension=extension),
-            uploaded_at=fake.date_time_between(start_date=message.created_at, end_date="now"),
-            message_id=message.id
+            file_path=f"/uploads/{fake.uuid4()}{extension}",
+            uploaded_by_id=message.sender_id,
+            message_id=message.id,
+            created_at=fake.date_time_between(start_date=message.created_at, end_date="now"),
+            updated_at=fake.date_time_between(start_date=message.created_at, end_date="now")
         )
         db.add(file)
         files.append(file)
@@ -159,6 +162,36 @@ def create_test_presence(db: Session, users: List[User]) -> List[Presence]:
     logger.info("Test presence data generated successfully")
     return presence_records
 
+def create_test_reactions(db: Session, messages: List[Message], users: List[User]) -> List[Reaction]:
+    """Generate test reactions"""
+    logger.info("Generating test reactions...")
+    reactions = []
+    
+    # Common emojis for testing
+    emoji_list = ["👍", "❤️", "😂", "🎉", "🔥", "👏", "🤔", "😍"]
+    
+    # Add reactions to random messages
+    for message in random.sample(messages, len(messages) // 3):  # React to 33% of messages
+        # Generate 1-3 reactions per message
+        num_reactions = random.randint(1, 3)
+        # Get random users who haven't reacted to this message yet
+        potential_reactors = random.sample(users, min(num_reactions, len(users)))
+        
+        for user in potential_reactors:
+            reaction = Reaction(
+                emoji=random.choice(emoji_list),
+                created_at=fake.date_time_between(start_date=message.created_at, end_date="now"),
+                updated_at=fake.date_time_between(start_date=message.created_at, end_date="now"),
+                user_id=user.id,
+                message_id=message.id
+            )
+            db.add(reaction)
+            reactions.append(reaction)
+    
+    db.commit()
+    logger.info("Test reactions generated successfully")
+    return reactions
+
 def main():
     """Main function to generate all test data"""
     logger.info("Starting test data generation...")
@@ -172,6 +205,7 @@ def main():
         messages = create_test_messages(db, channels, users)
         files = create_test_files(db, messages)
         presence = create_test_presence(db, users)
+        reactions = create_test_reactions(db, messages, users)
         
         logger.info("Test data generation completed successfully!")
         

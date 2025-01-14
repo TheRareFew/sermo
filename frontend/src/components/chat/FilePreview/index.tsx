@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { API_URL } from '../../../services/api/utils';
 
@@ -8,6 +8,7 @@ interface FilePreviewProps {
   filePath: string;
   fileSize?: number;
   fileId: number;
+  onLoad?: () => void;
 }
 
 const PreviewContainer = styled.div`
@@ -80,10 +81,22 @@ const ImagePreview = styled.img`
   margin-top: 4px;
 `;
 
-const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath, fileSize, fileId }) => {
+const VideoPreview = styled.video`
+  max-width: 300px;
+  max-height: 200px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+  margin-top: 4px;
+`;
+
+const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath, fileSize, fileId, onLoad }) => {
   const isImage = fileType.startsWith('image/');
-  const [imageUrl, setImageUrl] = useState<string>('');
+  const isVideo = fileType.startsWith('video/');
+  const [mediaUrl, setMediaUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const containerRef = useRef<HTMLDivElement>(null);
   
   const getAuthHeaders = () => {
     const token = localStorage.getItem('auth_token');
@@ -98,8 +111,8 @@ const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath,
   useEffect(() => {
     let mounted = true;
 
-    if (isImage) {
-      const loadImage = async () => {
+    if (isImage || isVideo) {
+      const loadMedia = async () => {
         try {
           const response = await fetch(`${API_URL}/files/download/${fileId}`, {
             headers: getAuthHeaders()
@@ -107,37 +120,42 @@ const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath,
 
           if (!response.ok) {
             if (response.status === 401) {
-              throw new Error('Please log in again to view this image');
+              throw new Error('Please log in again to view this media');
             }
-            throw new Error(`Failed to load image: ${response.status} ${response.statusText}`);
+            throw new Error(`Failed to load media: ${response.status} ${response.statusText}`);
           }
 
           const blob = await response.blob();
           const url = window.URL.createObjectURL(blob);
           if (mounted) {
-            setImageUrl(url);
+            setMediaUrl(url);
             setError('');
+            if (onLoad) {
+              onLoad();
+            }
           }
         } catch (error) {
-          console.error('Error loading image preview:', error);
+          console.error('Error loading media preview:', error);
           if (mounted) {
-            setError(error instanceof Error ? error.message : 'Failed to load image');
-            setImageUrl('');
+            setError(error instanceof Error ? error.message : 'Failed to load media');
+            setMediaUrl('');
           }
         }
       };
 
-      loadImage();
+      loadMedia();
+    } else if (onLoad) {
+      onLoad();
     }
 
     // Cleanup function
     return () => {
       mounted = false;
-      if (imageUrl) {
-        window.URL.revokeObjectURL(imageUrl);
+      if (mediaUrl) {
+        window.URL.revokeObjectURL(mediaUrl);
       }
     };
-  }, [fileId, isImage]);
+  }, [fileId, isImage, isVideo, onLoad]);
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -174,13 +192,39 @@ const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath,
   const getFileIcon = () => {
     switch (fileType) {
       case 'image/jpeg':
+      case 'image/jpg':
       case 'image/png':
       case 'image/gif':
+      case 'image/webp':
+      case 'image/svg+xml':
+      case 'image/bmp':
         return '🖼️';
+      case 'video/mp4':
+      case 'video/webm':
+      case 'video/ogg':
+      case 'video/quicktime':
+        return '🎥';
       case 'application/pdf':
         return '📄';
       case 'text/plain':
         return '📝';
+      case 'application/msword':
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        return '📝';
+      case 'application/vnd.ms-excel':
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        return '📊';
+      case 'application/vnd.ms-powerpoint':
+      case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        return '📽️';
+      case 'application/zip':
+      case 'application/x-zip-compressed':
+      case 'application/x-rar-compressed':
+        return '📦';
+      case 'audio/mpeg':
+      case 'audio/wav':
+      case 'audio/ogg':
+        return '🎵';
       default:
         return '📎';
     }
@@ -193,14 +237,22 @@ const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath,
   };
 
   return (
-    <PreviewContainer>
+    <PreviewContainer ref={containerRef}>
       <FileIcon>{getFileIcon()}</FileIcon>
       <FileInfo>
         <FileName>{filename}</FileName>
         <FileType>{fileType}</FileType>
         {fileSize && <FileSize>{formatFileSize(fileSize)}</FileSize>}
         {error && <FileType style={{ color: 'red' }}>{error}</FileType>}
-        {isImage && imageUrl && <ImagePreview src={imageUrl} alt={filename} />}
+        {isImage && mediaUrl && <ImagePreview src={mediaUrl} alt={filename} />}
+        {isVideo && mediaUrl && (
+          <VideoPreview 
+            src={mediaUrl} 
+            controls 
+            muted
+            preload="metadata"
+          />
+        )}
       </FileInfo>
       <DownloadLink onClick={handleDownload} href="#" title="Download file">
         ⬇️

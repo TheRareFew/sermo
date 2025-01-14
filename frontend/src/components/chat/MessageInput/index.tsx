@@ -8,6 +8,9 @@ import { transformMessage } from '../../../utils/messageTransform';
 import { AppDispatch } from '../../../store';
 import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../../store';
+import { sendAiMessage } from '../../../services/api/ai';
 
 interface MessageInputProps {
   channelId: string | null;
@@ -116,12 +119,31 @@ const FilePreviewContainer = styled.div`
   border: 1px solid ${props => props.theme.colors.border};
   border-radius: 4px;
   margin-bottom: 4px;
+  max-width: 100%;
+`;
+
+const VideoPreview = styled.video`
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 4px;
+`;
+
+const FilePreviewContent = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 `;
 
 const FilePreviewText = styled.span`
   font-family: 'Courier New', monospace;
   font-size: 12px;
   color: ${props => props.theme.colors.text};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
 `;
 
 const RemoveFileButton = styled.button`
@@ -156,9 +178,12 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [isLainMention, setIsLainMention] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastAttemptRef = useRef<{ file?: File; message: string } | null>(null);
+  const authToken = useSelector((state: RootState) => state.auth.token);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     if (channelId && inputRef.current) {
@@ -176,6 +201,13 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
       }, 100);
     }
   }, [messageSent]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newMessage = e.target.value;
+    setMessage(newMessage);
+    // Check for @lain mention
+    setIsLainMention(/@lain\b/.test(newMessage));
+  };
 
   const handleKeyPress = async (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && (message.trim() || attachedFile) && channelId) {
@@ -237,40 +269,64 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
           }
         }
 
-        // Send the message with the file ID if upload was successful
+        // Send the user's message with the file ID if upload was successful
         const messageResponse = await sendMessage({
           channelId,
           content: message.trim(),
           fileId
         });
 
+        // Store the numeric message ID before transforming
+        const messageId = parseInt(messageResponse.id.toString(), 10);
+
         const transformedMessage = transformMessage(messageResponse);
         dispatch(addMessage({
           channelId,
           message: transformedMessage
         }));
-        
+
+        // Clear message and reset states immediately after user's message is sent
         setMessage('');
         setAttachedFile(null);
         setMessageSent(true);
-        lastAttemptRef.current = null;
+
+        // If message mentions @lain, send to AI endpoint after user's message is sent
+        if (isLainMention && channelId) {
+          try {
+            await sendAiMessage({
+              message: message.trim(),
+              channel_id: parseInt(channelId, 10),
+              parent_message_id: messageId  // Now messageId is a number
+            });
+            
+            // The bot's response will come through the WebSocket
+            console.log('AI message sent successfully');
+            setIsLainMention(false);
+
+          } catch (error: unknown) {
+            console.error('AI response error:', error);
+            let errorMessage = 'Failed to get AI response. Please try again.';
+            
+            if (error instanceof Error) {
+              errorMessage = error.message;
+            } else if (typeof error === 'object' && error !== null && 'message' in error) {
+              errorMessage = String((error as { message: unknown }).message);
+            }
+            
+            setError({ 
+              message: errorMessage,
+              isWarning: true
+            });
+          }
+        }
       } catch (error) {
-        console.error('Failed to send message:', error);
         setError({ 
           message: 'Failed to send message. Please try again.',
           isWarning: true
         });
       } finally {
         setIsLoading(false);
-        setUploadProgress(0);
       }
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setMessage(e.target.value);
-    if (error) {
-      setError(null);
     }
   };
 
@@ -299,12 +355,38 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
         }
 
         // Check file type
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'text/plain'];
+        const allowedTypes = [
+          // Images
+          'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp',
+          // Videos
+          'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+          // Documents
+          'application/pdf', 'text/plain',
+          'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          // Archives
+          'application/zip', 'application/x-zip-compressed', 'application/x-rar-compressed',
+          // Audio
+          'audio/mpeg', 'audio/wav', 'audio/ogg',
+          // Code
+          'text/javascript', 'application/javascript', 'text/css', 'text/html', 'application/json',
+          'text/x-python', 'text/python', 'application/x-python', 'application/x-python-code'
+        ];
+
         if (!allowedTypes.includes(file.type)) {
           throw new FileUploadError(
-            'File type not supported. Allowed types: jpg, png, gif, pdf, txt',
+            'File type not supported. Allowed types: images (jpg, png, gif, webp, svg, bmp), videos (mp4, webm, ogg, mov), documents (pdf, txt, doc, docx, xls, xlsx, ppt, pptx), archives (zip, rar), audio (mp3, wav, ogg), and code files (js, css, html, json, py)',
             'INVALID_FILE_TYPE'
           );
+        }
+
+        // Create preview URL for video files
+        if (file.type.startsWith('video/')) {
+          const url = URL.createObjectURL(file);
+          setPreviewUrl(url);
+        } else {
+          setPreviewUrl(null);
         }
 
         setAttachedFile(file);
@@ -323,6 +405,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+        setPreviewUrl(null);
       }
     }
   };
@@ -332,6 +415,10 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
   };
 
   const handleRemoveFile = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(null);
     setAttachedFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -346,6 +433,15 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
       setError(null);
     }
   };
+
+  // Clean up preview URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   return (
     <InputContainer>
@@ -366,7 +462,17 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
       <InputWrapper>
         {attachedFile && (
           <FilePreviewContainer>
-            <FilePreviewText>{attachedFile.name}</FilePreviewText>
+            <FilePreviewContent>
+              {previewUrl && attachedFile.type.startsWith('video/') && (
+                <VideoPreview 
+                  src={previewUrl} 
+                  controls 
+                  muted
+                  preload="metadata"
+                />
+              )}
+              <FilePreviewText>{attachedFile.name}</FilePreviewText>
+            </FilePreviewContent>
             <RemoveFileButton onClick={handleRemoveFile} title="Remove file">×</RemoveFileButton>
           </FilePreviewContainer>
         )}
@@ -392,7 +498,20 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
           ref={fileInputRef}
           type="file"
           onChange={handleFileSelect}
-          accept=".jpg,.jpeg,.png,.gif,.pdf,.txt"
+          accept={
+            // Images
+            ".jpg,.jpeg,.png,.gif,.webp,.svg,.bmp," +
+            // Videos
+            ".mp4,.webm,.ogv,.mov," +
+            // Documents
+            ".pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx," +
+            // Archives
+            ".zip,.rar," +
+            // Audio
+            ".mp3,.wav,.ogg," +
+            // Code
+            ".js,.css,.html,.json,.py"
+          }
         />
       </InputWrapper>
       {error && (

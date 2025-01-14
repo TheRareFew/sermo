@@ -100,9 +100,19 @@ export const isAuthenticated = (): boolean => {
     // Basic validation - check if token is expired
     const payload = JSON.parse(atob(token.split('.')[1]));
     const expirationTime = payload.exp * 1000; // Convert to milliseconds
-    return Date.now() < expirationTime;
+    const isExpired = Date.now() >= expirationTime;
+    
+    if (isExpired) {
+      // Clear token if expired
+      localStorage.removeItem('auth_token');
+      return false;
+    }
+    
+    return true;
   } catch (error) {
     console.error('Error validating token:', error);
+    // Clear invalid token
+    localStorage.removeItem('auth_token');
     return false;
   }
 };

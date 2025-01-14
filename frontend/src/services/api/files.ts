@@ -37,10 +37,26 @@ export const uploadFile = async (file: File, messageId?: number): Promise<FileRe
   }
 
   // Validate file type
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'text/plain'];
+  const allowedTypes = [
+    // Images
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp',
+    // Videos
+    'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+    // Documents
+    'application/pdf', 'text/plain',
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .doc & .docx
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xls & .xlsx
+    'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .ppt & .pptx
+    // Archives
+    'application/zip', 'application/x-rar-compressed',
+    // Audio
+    'audio/mpeg', 'audio/wav', 'audio/ogg',
+    // Code
+    'text/javascript', 'text/css', 'text/html', 'application/json'
+  ];
   if (!allowedTypes.includes(file.type)) {
     throw new FileUploadError(
-      'File type not supported. Allowed types: jpg, png, gif, pdf, txt',
+      'File type not supported. Allowed types: images (jpg, png, gif, webp, svg, bmp), videos (mp4, webm, ogg, mov), documents (pdf, txt, doc, docx, xls, xlsx, ppt, pptx), archives (zip, rar), audio (mp3, wav, ogg), and code files.',
       'INVALID_FILE_TYPE'
     );
   }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import MessageOptions from '../../chat/MessageOptions';
 import FilePreview from '../FilePreview';
@@ -23,11 +23,13 @@ export interface ChatMessageProps {
   onReactionRemove?: (emoji: string) => void;
   attachments?: Attachment[];
   has_attachments?: boolean;
+  isBot?: boolean;
+  onContentLoad?: () => void;
 }
 
 const MessageContainer = styled.div<{ $isReply?: boolean }>`
   font-family: 'Courier New', monospace;
-  padding: 2px 0;
+  padding: 0;
   color: #fff;
   position: relative;
   
@@ -38,31 +40,54 @@ const MessageContainer = styled.div<{ $isReply?: boolean }>`
 
 const MessageContent = styled.div`
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  flex-direction: column;
+  gap: 0;
   position: relative;
-  padding-right: 40px; /* Make room for the options menu */
+  padding: 0 4px;
+`;
+
+const MessageRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px;
+  row-gap: 0;
 `;
 
 const MessageText = styled.div`
   flex: 1;
-  min-width: 0; /* Allow text to wrap */
+  min-width: 300px; /* Force wrap on longer messages */
+  white-space: pre-wrap;
+  word-wrap: break-word;
+`;
+
+const ButtonsContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto; /* Push to the right */
+  flex-shrink: 0;
 `;
 
 const OptionsWrapper = styled.div`
-  position: absolute;
-  right: 8px;
-  top: 0;
+  flex-shrink: 0;
+`;
+
+const ReactionsContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  align-items: center;
+  margin-left: 2px;
+  margin-top: 0;
 `;
 
 const Timestamp = styled.span`
   color: #888;
 `;
 
-const Sender = styled.span`
-  color: #0f0;
+const Sender = styled.span<{ $isBot?: boolean }>`
+  color: ${props => props.$isBot ? '#ff00ff' : '#0f0'};
   font-weight: bold;
 `;
 
@@ -72,20 +97,12 @@ const ReplyCount = styled.button`
   color: #888;
   cursor: pointer;
   font-family: inherit;
-  padding: 0 4px;
+  padding: 0 2px;
   font-size: inherit;
 
   &:hover {
     color: #fff;
   }
-`;
-
-const ReactionsContainer = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
-  margin-left: 8px;
 `;
 
 const ReactionBadge = styled.button<{ $isOwn: boolean }>`
@@ -115,14 +132,14 @@ const ReactionCount = styled.span`
 const AttachmentsContainer = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-left: 8px;
-  margin-top: 4px;
+  gap: 1px;
+  margin-left: 2px;
+  margin-top: 0;
 `;
 
 const AttachmentIcon = styled.span`
   color: #888;
-  margin-left: 4px;
+  margin-left: 2px;
   cursor: pointer;
   
   &:hover {
@@ -148,10 +165,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   onReactionRemove,
   attachments = [],
   has_attachments = false,
+  isBot = false,
+  onContentLoad,
 }) => {
   const [showAttachments, setShowAttachments] = useState(false);
   const [loadedAttachments, setLoadedAttachments] = useState<Attachment[]>(attachments);
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+  const messageRef = useRef<HTMLDivElement>(null);
 
   const handleAttachmentToggle = useCallback(async () => {
     if (!has_attachments) return;
@@ -162,13 +182,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
       try {
         const files = await getMessageFiles(id);
         setLoadedAttachments(files);
+        // Notify parent that content has loaded
+        if (onContentLoad) {
+          onContentLoad();
+        }
       } catch (error) {
         console.error('Failed to load attachments:', error);
       } finally {
         setIsLoadingAttachments(false);
       }
+    } else if (onContentLoad) {
+      // If attachments are already loaded, notify parent immediately
+      onContentLoad();
     }
-  }, [id, has_attachments, showAttachments, loadedAttachments.length]);
+  }, [id, has_attachments, showAttachments, loadedAttachments.length, onContentLoad]);
 
   const formattedTime = new Date(timestamp).toLocaleTimeString([], { 
     hour: '2-digit', 
@@ -211,63 +238,62 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   };
 
   return (
-    <MessageContainer $isReply={isReply}>
+    <MessageContainer ref={messageRef} $isReply={isReply}>
       <MessageContent>
-        <MessageText>
-          <Sender>{sender}</Sender> [{formattedTime}]: {content}
-          {has_attachments && (
-            <AttachmentIcon onClick={handleAttachmentToggle} title="Toggle attachments">
-              📎
-            </AttachmentIcon>
-          )}
-          {replyCount > 0 && (
-            <ReplyCount onClick={onToggleReplies}>
-              [{isExpanded ? '-' : '+'} {replyCount} {replyCount === 1 ? 'reply' : 'replies'}]
-            </ReplyCount>
-          )}
-        </MessageText>
-        <OptionsWrapper>
-          <MessageOptions
-            messageId={id}
-            onDelete={onDelete}
-            onReply={onReply}
-            canDelete={isOwnMessage}
-            canReply={true}
-            onReactionAdd={onReactionAdd}
-            onReactionRemove={onReactionRemove}
-          />
-        </OptionsWrapper>
+        <MessageRow>
+          <MessageText>
+            <Sender $isBot={isBot}>{sender}</Sender> [{formattedTime}]: {content}
+            {has_attachments && (
+              <AttachmentIcon onClick={handleAttachmentToggle} title="Toggle attachments">
+                📎
+              </AttachmentIcon>
+            )}
+            {replyCount > 0 && (
+              <ReplyCount onClick={onToggleReplies}>
+                [{isExpanded ? '-' : '+'} {replyCount} {replyCount === 1 ? 'reply' : 'replies'}]
+              </ReplyCount>
+            )}
+          </MessageText>
+          <ButtonsContainer>
+            <MessageOptions
+              messageId={id}
+              onDelete={onDelete}
+              onReply={onReply}
+              canDelete={isOwnMessage}
+              canReply={!isBot}
+              onReactionAdd={onReactionAdd}
+              onReactionRemove={onReactionRemove}
+            />
+          </ButtonsContainer>
+        </MessageRow>
+        {Object.entries(groupedReactions).length > 0 && (
+          <ReactionsContainer>
+            {Object.entries(groupedReactions).map(([emoji, { count, hasOwn }]) => (
+              <ReactionBadge
+                key={emoji}
+                onClick={() => handleReactionClick(emoji)}
+                $isOwn={hasOwn}
+                title={`${hasOwn ? 'Remove' : 'Add'} reaction`}
+              >
+                {emoji} <ReactionCount>{count}</ReactionCount>
+              </ReactionBadge>
+            ))}
+          </ReactionsContainer>
+        )}
       </MessageContent>
-      {Object.entries(groupedReactions).length > 0 && (
-        <ReactionsContainer>
-          {Object.entries(groupedReactions).map(([emoji, { count, hasOwn }]) => (
-            <ReactionBadge
-              key={emoji}
-              onClick={() => handleReactionClick(emoji)}
-              $isOwn={hasOwn}
-              title={`${hasOwn ? 'Remove' : 'Add'} reaction`}
-            >
-              {emoji} <ReactionCount>{count}</ReactionCount>
-            </ReactionBadge>
-          ))}
-        </ReactionsContainer>
-      )}
-      {showAttachments && (
+      {showAttachments && loadedAttachments.length > 0 && (
         <AttachmentsContainer>
-          {isLoadingAttachments ? (
-            <span>Loading attachments...</span>
-          ) : (
-            loadedAttachments.map((attachment) => (
-              <FilePreview
-                key={attachment.id}
-                filename={attachment.filename}
-                fileType={attachment.file_type}
-                filePath={attachment.file_path}
-                fileSize={attachment.file_size}
-                fileId={attachment.id}
-              />
-            ))
-          )}
+          {loadedAttachments.map((attachment) => (
+            <FilePreview
+              key={attachment.id}
+              fileId={attachment.id}
+              filename={attachment.filename}
+              fileType={attachment.file_type}
+              filePath={attachment.file_path}
+              fileSize={attachment.file_size}
+              onLoad={onContentLoad}
+            />
+          ))}
         </AttachmentsContainer>
       )}
     </MessageContainer>

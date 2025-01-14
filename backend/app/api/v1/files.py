@@ -23,11 +23,46 @@ logger = logging.getLogger(__name__)
 UPLOAD_DIR = "uploads"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 ALLOWED_TYPES = {
+    # Images
     "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",  # Some browsers might use this variant
     "image/png": ".png",
     "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "image/bmp": ".bmp",
+    # Videos
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/ogg": ".ogv",
+    "video/quicktime": ".mov",
+    # Documents
     "application/pdf": ".pdf",
-    "text/plain": ".txt"
+    "text/plain": ".txt",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    # Archives
+    "application/zip": ".zip",
+    "application/x-zip-compressed": ".zip",  # Alternative ZIP MIME type
+    "application/x-rar-compressed": ".rar",
+    # Audio
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+    "audio/ogg": ".ogg",
+    # Code
+    "text/javascript": ".js",
+    "application/javascript": ".js",  # Alternative JavaScript MIME type
+    "text/css": ".css",
+    "text/html": ".html",
+    "application/json": ".json",
+    "text/x-python": ".py",  # Python files
+    "text/python": ".py",    # Alternative Python MIME type
+    "application/x-python": ".py",  # Another Python MIME type
+    "application/x-python-code": ".py"  # Yet another Python MIME type
 }
 
 # Create uploads directory if it doesn't exist
@@ -42,11 +77,60 @@ async def upload_file(
 ):
     """Upload a file"""
     try:
-        # Validate file type first
+        # Log incoming file information
+        logger.info(f"Attempting to upload file: {file.filename}")
+        logger.info(f"File content type: {file.content_type}")
+        logger.info(f"Allowed types: {ALLOWED_TYPES}")
+
+        # Get file extension from filename
+        file_extension = os.path.splitext(file.filename)[1].lower()
+        
+        # If content type isn't recognized but extension is valid, try to infer content type
         if file.content_type not in ALLOWED_TYPES:
+            # Map of extensions to common MIME types
+            extension_to_mime = {
+                '.py': 'text/x-python',
+                '.js': 'text/javascript',
+                '.css': 'text/css',
+                '.html': 'text/html',
+                '.json': 'application/json',
+                '.txt': 'text/plain',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp',
+                '.svg': 'image/svg+xml',
+                '.bmp': 'image/bmp',
+                '.mp4': 'video/mp4',
+                '.webm': 'video/webm',
+                '.ogg': 'audio/ogg',
+                '.mov': 'video/quicktime',
+                '.mp3': 'audio/mpeg',
+                '.wav': 'audio/wav',
+                '.zip': 'application/zip',
+                '.rar': 'application/x-rar-compressed',
+                '.pdf': 'application/pdf',
+                '.doc': 'application/msword',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.xls': 'application/vnd.ms-excel',
+                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                '.ppt': 'application/vnd.ms-powerpoint',
+                '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            }
+            
+            if file_extension in extension_to_mime:
+                file.content_type = extension_to_mime[file_extension]
+                logger.info(f"Inferred content type from extension: {file.content_type}")
+
+        # Validate file type
+        if file.content_type not in ALLOWED_TYPES:
+            logger.error(f"File type not supported: {file.content_type}")
+            logger.error(f"File extension: {file_extension}")
+            logger.error(f"Current allowed types: {list(ALLOWED_TYPES.keys())}")
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"File type not supported. Allowed types: {', '.join(ALLOWED_TYPES.keys())}"
+                detail=f"File type '{file.content_type}' not supported. Allowed types: {', '.join(ALLOWED_TYPES.keys())}"
             )
 
         # Verify message exists and user has access if message_id is provided
