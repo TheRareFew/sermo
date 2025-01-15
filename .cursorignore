@@ -1,3 +1,5 @@
 .gitignore
 .cursorignore
 ai_demo/
+backend/venv311/
+venv311/

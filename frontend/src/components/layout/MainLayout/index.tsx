@@ -20,8 +20,7 @@ import {
 } from '../../../store/messages/messagesSlice';
 import { transformMessage } from '../../../utils/messageTransform';
 import Button from '../../common/Button';
-import UserListItem from '../../chat/UserListItem';
-import ChannelListItem from '../../chat/ChannelListItem';
+import Sidebar from './Sidebar';
 import CreateChannelModal from '../../chat/CreateChannelModal';
 import MessageInput from '../../chat/MessageInput';
 import MessageList from '../../chat/MessageList';
@@ -52,39 +51,6 @@ const MainContainer = styled.div`
   font-family: 'VT323', monospace;
 `;
 
-const Sidebar = styled.div`
-  width: 200px;
-  border-right: 2px solid ${props => props.theme.colors.border};
-  display: flex;
-  flex-direction: column;
-`;
-
-const ChannelList = styled.div`
-  flex: 1;
-  padding: 16px;
-  border-bottom: 2px solid ${props => props.theme.colors.border};
-  overflow-y: auto;
-
-  h2 {
-    margin: 0 0 16px 0;
-    text-transform: uppercase;
-    color: ${props => props.theme.colors.primary};
-  }
-`;
-
-const UserList = styled.div`
-  height: 200px;
-  padding: 16px;
-  border-top: 2px solid ${props => props.theme.colors.border};
-  overflow-y: auto;
-
-  h2 {
-    margin: 0 0 16px 0;
-    text-transform: uppercase;
-    color: ${props => props.theme.colors.primary};
-  }
-`;
-
 const ChatArea = styled.div`
   flex: 1;
   display: flex;
@@ -108,57 +74,6 @@ const ChatHeader = styled.div`
 
 const ChatInput = styled.div`
   border-top: 2px solid ${props => props.theme.colors.border};
-`;
-
-const LogoutButton = styled.button`
-  background: none;
-  border: 2px solid ${props => props.theme.colors.error};
-  color: ${props => props.theme.colors.error};
-  padding: 4px 8px;
-  font-family: 'VT323', monospace;
-  cursor: pointer;
-  text-transform: uppercase;
-
-  &:hover {
-    background: ${props => props.theme.colors.error};
-    color: ${props => props.theme.colors.background};
-  }
-`;
-
-const ChannelHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-
-  h2 {
-    margin: 0;
-    text-transform: uppercase;
-    color: ${props => props.theme.colors.primary};
-  }
-`;
-
-const CreateChannelButton = styled(Button)`
-  padding: 2px 8px;
-  font-size: 0.875rem;
-`;
-
-const ChannelGroup = styled.div`
-  margin-bottom: 16px;
-
-  &:last-child {
-    margin-bottom: 0;
-  }
-`;
-
-const GroupTitle = styled.h3`
-  margin: 0 0 8px 0;
-  padding: 4px 8px;
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  color: ${props => props.theme.colors.textLight};
-  border-bottom: 1px solid ${props => props.theme.colors.border};
-  font-family: 'Courier New', monospace;
 `;
 
 const ChannelActions = styled.div`
@@ -485,78 +400,7 @@ const MainLayout: React.FC = () => {
 
   return (
     <MainContainer>
-      <Sidebar>
-        <ChannelList>
-          <ChannelHeader>
-            <h2>Channels</h2>
-            <CreateChannelButton onClick={() => setIsCreateModalOpen(true)}>
-              +
-            </CreateChannelButton>
-          </ChannelHeader>
-
-          {/* Public Channels */}
-          <ChannelGroup>
-            <GroupTitle>Public</GroupTitle>
-            {publicChannels.map(channel => (
-              <ChannelListItem
-                key={channel.id}
-                name={channel.name}
-                isActive={channel.id === activeChannelId}
-                hasUnread={channel.unreadCount > 0}
-                isDirect={false}
-                isPublic={true}
-                onClick={() => handleChannelSelect(channel.id)}
-              />
-            ))}
-          </ChannelGroup>
-
-          {/* Private Channels */}
-          <ChannelGroup>
-            <GroupTitle>Private</GroupTitle>
-            {privateChannels.map(channel => (
-              <ChannelListItem
-                key={channel.id}
-                name={channel.name}
-                isActive={channel.id === activeChannelId}
-                hasUnread={channel.unreadCount > 0}
-                isDirect={false}
-                isPublic={false}
-                onClick={() => handleChannelSelect(channel.id)}
-              />
-            ))}
-          </ChannelGroup>
-
-          {/* Direct Messages */}
-          <ChannelGroup>
-            <GroupTitle>Direct Messages</GroupTitle>
-            {directMessages.map(channel => (
-              <ChannelListItem
-                key={channel.id}
-                name={channel.name}
-                isActive={channel.id === activeChannelId}
-                hasUnread={channel.unreadCount > 0}
-                isDirect={true}
-                isPublic={false}
-                onClick={() => handleChannelSelect(channel.id)}
-              />
-            ))}
-          </ChannelGroup>
-        </ChannelList>
-
-        <UserList>
-          <h2>Users</h2>
-          {Object.values(users).map(user => (
-            <UserListItem
-              key={user.id}
-              username={user.username}
-              status={user.status}
-            />
-          ))}
-        </UserList>
-        <LogoutButton onClick={handleLogout}>
-          Logout
-        </LogoutButton>
-      </Sidebar>
+      <Sidebar onCreateChannel={() => setIsCreateModalOpen(true)} />
 
       <ChatArea>
         <ChatHeader>

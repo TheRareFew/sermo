@@ -16,6 +16,7 @@ export interface Channel {
   description?: string;
   is_direct_message: boolean;
   is_public: boolean;
+  is_vc: boolean;
   created_at: string;
   created_by_id: string;
   members: string[];

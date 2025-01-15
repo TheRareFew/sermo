@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -42,4 +42,26 @@ async def get_current_user(
             detail="User not found"
         )
 
-    return user 
+    return user
+
+async def get_user_from_token(token: str) -> Optional[User]:
+    """Get user from token for WebSocket authentication"""
+    try:
+        # Create a new database session
+        db = SessionLocal()
+        try:
+            # Decode token and get user ID
+            payload = decode_token(token)
+            user_id = int(payload.get("sub"))
+            if user_id is None:
+                return None
+
+            # Get user from database
+            user = db.query(User).filter(User.id == user_id).first()
+            return user
+        except (ValueError, Exception):
+            return None
+        finally:
+            db.close()
+    except Exception:
+        return None 

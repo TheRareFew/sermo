@@ -23,6 +23,7 @@ interface CreateChannelParams {
   name: string;
   description?: string;
   is_public: boolean;
+  is_vc: boolean;
   member_ids?: string[];
 }
 

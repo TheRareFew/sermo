@@ -56,6 +56,7 @@ const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [isVc, setIsVc] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -96,6 +97,7 @@ const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose
         name: trimmedName,
         description: description.trim() || undefined,
         is_public: isPublic,
+        is_vc: isVc,
         member_ids: !isPublic ? [currentUser!.id, ...selectedMembers] : undefined
       });
       
@@ -114,6 +116,7 @@ const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose
     setName('');
     setDescription('');
     setIsPublic(true);
+    setIsVc(false);
     setSelectedMembers([]);
     setError(null);
   };
@@ -156,6 +159,17 @@ const CreateChannelModal: React.FC<CreateChannelModalProps> = ({ isOpen, onClose
             {isPublic 
               ? "Anyone can join this channel"
               : "Only invited members can join this channel"}
+          </Description>
+        </ToggleGroup>
+
+        <ToggleGroup>
+          <Checkbox
+            checked={isVc}
+            onChange={(e) => setIsVc(e.target.checked)}
+            label="Voice Channel"
+          />
+          <Description style={{ margin: 0, fontSize: '0.9em' }}>
+            Enable voice communication in this channel
           </Description>
         </ToggleGroup>
         

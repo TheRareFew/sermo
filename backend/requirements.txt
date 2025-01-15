@@ -20,6 +20,9 @@ python-magic==0.4.27
 # WebSocket Support
 websockets==12.0
 
+# Audio Processing
+numpy==1.26.3  # For audio data handling
+
 # Utilities
 python-dotenv==1.0.1
 pydantic==2.6.1

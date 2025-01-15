@@ -11,6 +11,7 @@ import MainLayout from './components/layout/MainLayout';
 import { theme } from './styles/themes/default';
 import { RootState } from './types';
 import WebSocketService from './services/websocket';
+import { AuthProvider } from './contexts/AuthContext';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
@@ -49,56 +50,36 @@ const App: React.FC = () => {
           />
         );
       case 'signup':
-        return (
-          <SignupForm
-            onLoginClick={() => setCurrentView('login')}
-          />
-        );
+        return <SignupForm onLoginClick={() => setCurrentView('login')} />;
       case 'forgot-password':
-        return (
-          <ForgotPasswordForm
-            onLoginClick={() => setCurrentView('login')}
-          />
-        );
+        return <ForgotPasswordForm onLoginClick={() => setCurrentView('login')} />;
+      default:
+        return null;
     }
   };
 
   return (
-    <ThemeProvider theme={theme}>
-      <Routes>
-        <Route path="/login" element={
-          isAuthenticated ? <Navigate to="/" replace /> : renderAuthContent()
-        } />
-        <Route path="/*" element={
-          <ProtectedRoute>
-            <MainLayout />
-          </ProtectedRoute>
-        } />
-      </Routes>
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar
-        newestOnTop
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable={false}
-        pauseOnHover
-        theme="dark"
-        style={{
-          fontFamily: "'VT323', monospace",
-          fontSize: '1rem'
-        }}
-        toastStyle={{
-          background: theme.colors.background,
-          color: theme.colors.text,
-          border: `2px solid ${theme.colors.border}`,
-          borderRadius: 0,
-          boxShadow: '2px 2px 0 rgba(0, 0, 0, 0.5)'
-        }}
-      />
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider theme={theme}>
+        <div className="App">
+          <Routes>
+            <Route
+              path="/login"
+              element={!isAuthenticated ? renderAuthContent() : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <MainLayout />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+          <ToastContainer position="top-right" autoClose={3000} />
+        </div>
+      </ThemeProvider>
+    </AuthProvider>
   );
 };
 

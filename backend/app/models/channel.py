@@ -19,6 +19,7 @@ class Channel(Base):
     description = Column(String, nullable=True)
     is_direct_message = Column(Boolean, default=False)
     is_public = Column(Boolean, default=True)
+    is_vc = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     created_by_id = Column(Integer, ForeignKey("users.id"))

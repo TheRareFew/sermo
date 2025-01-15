@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from datetime import datetime, UTC
 import os
 from dotenv import load_dotenv
-import atexit
 from langsmith import Client
 import logging
 from .websockets import manager
@@ -25,9 +24,8 @@ router = APIRouter()
 # Load and validate environment variables
 load_dotenv()
 
-# Initialize LangSmith client for proper cleanup
+# Initialize LangSmith client
 langsmith_client = Client()
-atexit.register(lambda: langsmith_client.close_session())
 
 # Validate required environment variables
 required_vars = ["OPENAI_API_KEY", "PINECONE_API_KEY", "PINECONE_INDEX_TWO"]
@@ -97,7 +95,7 @@ Answer as Lain Iwakura. If no relevant information is found, say so, but still b
     logger.info(f"Generated prompt with context: {prompt_with_context}")
 
     # Query the LLM
-    llm = ChatOpenAI(temperature=0.7, model_name="gpt-4")
+    llm = ChatOpenAI(temperature=0.7, model_name="gpt-4o-mini")
     results = llm.invoke(prompt_with_context)
     logger.info(f"LLM response: {results.content}")
 

@@ -1,12 +1,13 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import Dict, Set, Optional
+from typing import Dict, Set, Optional, List
 import json
 import logging
 from datetime import datetime, UTC
 from pydantic import BaseModel, Field, ValidationError
 import asyncio
 import time
+import numpy as np
 
 from ...models.user import User
 from ...models.channel import Channel
@@ -41,26 +42,28 @@ async def get_current_user_ws(token: str, db: Session) -> Optional[User]:
 MAX_MESSAGE_LENGTH = 4096  # 4KB max message length
 VALID_STATUS_VALUES = {"online", "offline", "away", "busy"}
 
-# Active WebSocket connections
+# Active WebSocket connections and voice channels
 connections: Dict[str, Dict] = {}
+voice_channels: Dict[int, Set[WebSocket]] = {}  # channel_id -> set of websockets
+voice_channel_users: Dict[int, Set[int]] = {}  # channel_id -> set of user_ids
+voice_states: Dict[int, Dict[str, bool]] = {}  # user_id -> {"muted": bool, "speaking": bool}
 
 # Pydantic models for WebSocket messages
 class StatusUpdateMessage(BaseModel):
     type: str = Field("status_update")
     status: str
 
-class ChannelJoinMessage(BaseModel):
-    type: str = Field("join_channel")
+class VoiceStateMessage(BaseModel):
+    type: str = Field("voice_state")
     channel_id: int
+    muted: bool = False
+    speaking: bool = False
 
-class ChannelLeaveMessage(BaseModel):
-    type: str = Field("leave_channel")
+class VoiceMessage(BaseModel):
+    type: str = Field("voice")
     channel_id: int
-
-class ChatMessage(BaseModel):
-    type: str = Field("message")
-    channel_id: int
-    content: str = Field(..., max_length=MAX_MESSAGE_LENGTH)
+    audio_data: bytes  # Raw audio data from WebRTC
+    timestamp: float
 
 class ConnectionManager:
     def __init__(self):
@@ -311,6 +314,80 @@ class ConnectionManager:
         for connection in self.active_connections.values():
             await connection.send_json(message)
 
+# Voice channel management
+async def join_voice_channel(websocket: WebSocket, channel_id: int, user_id: int):
+    """Add a WebSocket connection to a voice channel"""
+    if channel_id not in voice_channels:
+        voice_channels[channel_id] = set()
+        voice_channel_users[channel_id] = set()
+    
+    voice_channels[channel_id].add(websocket)
+    voice_channel_users[channel_id].add(user_id)
+    
+    # Initialize voice state for user
+    voice_states[user_id] = {"muted": False, "speaking": False}
+    
+    # Notify other users in the channel
+    await broadcast_voice_state_update(channel_id, user_id, "joined")
+    logger.debug(f"User {user_id} joined voice channel {channel_id}")
+
+async def leave_voice_channel(websocket: WebSocket, channel_id: int, user_id: int):
+    """Remove a WebSocket connection from a voice channel"""
+    if channel_id in voice_channels:
+        voice_channels[channel_id].discard(websocket)
+        voice_channel_users[channel_id].discard(user_id)
+        
+        # Clean up voice state
+        if user_id in voice_states:
+            del voice_states[user_id]
+        
+        # Notify other users in the channel
+        await broadcast_voice_state_update(channel_id, user_id, "left")
+        
+        # Clean up empty channel
+        if not voice_channels[channel_id]:
+            del voice_channels[channel_id]
+            del voice_channel_users[channel_id]
+        
+        logger.debug(f"User {user_id} left voice channel {channel_id}")
+
+async def broadcast_voice(message: VoiceMessage, sender_ws: WebSocket, channel_id: int):
+    """Broadcast voice data to all users in the channel except the sender"""
+    if channel_id in voice_channels:
+        for ws in voice_channels[channel_id]:
+            if ws != sender_ws:
+                try:
+                    await ws.send_bytes(message.audio_data)
+                except Exception as e:
+                    logger.error(f"Error broadcasting voice: {str(e)}")
+
+async def broadcast_voice_state_update(channel_id: int, user_id: int, event: str):
+    """Broadcast voice state updates to all users in the channel"""
+    if channel_id in voice_channels:
+        state = voice_states.get(user_id, {"muted": False, "speaking": False})
+        message = {
+            "type": "voice_state_update",
+            "user_id": str(user_id),
+            "channel_id": channel_id,
+            "event": event,
+            "state": state
+        }
+        for ws in voice_channels[channel_id]:
+            try:
+                await ws.send_json(message)
+            except Exception as e:
+                logger.error(f"Error broadcasting voice state: {str(e)}")
+
+async def update_voice_state(channel_id: int, user_id: int, muted: bool = None, speaking: bool = None):
+    """Update a user's voice state and broadcast the change"""
+    if user_id in voice_states:
+        state = voice_states[user_id]
+        if muted is not None:
+            state["muted"] = muted
+        if speaking is not None:
+            state["speaking"] = speaking
+        await broadcast_voice_state_update(channel_id, user_id, "state_changed")
+
 manager = ConnectionManager()
 
 @router.websocket("/ws")
@@ -415,3 +492,85 @@ async def websocket_endpoint(
             await websocket.close(code=4000)
         except:
             pass 
+
+@router.websocket("/ws/voice/{channel_id}")
+async def voice_endpoint(
+    websocket: WebSocket,
+    channel_id: int,
+    db: Session = Depends(get_db)
+):
+    """Handle voice WebSocket connections"""
+    try:
+        # Accept the connection
+        await websocket.accept()
+        
+        # Get authentication token from query parameters
+        token = websocket.query_params.get("token")
+        if not token:
+            logger.error("No token provided")
+            await websocket.close(code=1008)  # Policy violation
+            return
+
+        # Authenticate user
+        user = await get_current_user_ws(token, db)
+        if not user:
+            logger.error("Invalid token")
+            await websocket.close(code=1008)
+            return
+
+        # Check if user has access to the channel
+        channel = db.query(Channel).filter(Channel.id == channel_id).first()
+        if not channel:
+            logger.error(f"Channel {channel_id} not found")
+            await websocket.close(code=1008)
+            return
+
+        # Join voice channel
+        await join_voice_channel(websocket, channel_id, user.id)
+        logger.info(f"User {user.id} joined voice channel {channel_id}")
+
+        try:
+            while True:
+                # Receive data
+                try:
+                    data = await websocket.receive()
+                    if data["type"] == "websocket.disconnect":
+                        break
+                    
+                    if data["type"] == "websocket.receive":
+                        if "bytes" in data:  # Audio data
+                            message = VoiceMessage(
+                                type="voice",
+                                channel_id=channel_id,
+                                audio_data=data["bytes"],
+                                timestamp=time.time()
+                            )
+                            await broadcast_voice(message, websocket, channel_id)
+                            
+                        elif "text" in data:  # Voice state updates
+                            json_data = json.loads(data["text"])
+                            if json_data["type"] == "voice_state":
+                                state = VoiceStateMessage(**json_data)
+                                await update_voice_state(
+                                    channel_id,
+                                    user.id,
+                                    muted=state.muted,
+                                    speaking=state.speaking
+                                )
+                    
+                except ValidationError as e:
+                    logger.error(f"Invalid message: {str(e)}")
+                    continue
+                except json.JSONDecodeError:
+                    logger.error("Invalid JSON message")
+                    continue
+
+        except WebSocketDisconnect:
+            logger.info(f"User {user.id} disconnected from voice channel {channel_id}")
+        finally:
+            # Leave voice channel
+            await leave_voice_channel(websocket, channel_id, user.id)
+
+    except Exception as e:
+        logger.error(f"Error in voice endpoint: {str(e)}")
+        await websocket.close(code=1011)  # Internal error 

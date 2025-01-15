@@ -93,6 +93,7 @@ async def create_channel(
             description=channel.description,
             is_direct_message=channel.is_direct_message,
             is_public=channel.is_public,
+            is_vc=channel.is_vc,
             created_by_id=current_user.id,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC)

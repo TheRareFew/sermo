@@ -1,53 +1,84 @@
-import React from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import styled from 'styled-components';
+import { DefaultTheme } from 'styled-components';
 import { setActiveChannel } from '../../../../store/chat/chatSlice';
+import { logout } from '../../../../store/auth/authSlice';
 import Button from '../../../common/Button';
 import { Channel, User } from '../../../../types';
 import { RootState } from '../../../../store/rootReducer';
+import VoiceChannel from '../../../voice/VoiceChannel';
 
 const SidebarContainer = styled.div`
-  width: 280px;
+  width: 200px;
+  border-right: 2px solid ${props => props.theme.colors.border};
   display: flex;
   flex-direction: column;
   background-color: ${props => props.theme.colors.backgroundDark};
-  border-right: 2px solid ${props => props.theme.colors.border};
   font-family: 'VT323', monospace;
-`;
-
-const Section = styled.div`
-  padding: 1rem;
-  border-bottom: 2px solid ${props => props.theme.colors.border};
-
-  &:last-child {
-    border-bottom: none;
-  }
-`;
-
-const SectionHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  padding: 0.25rem 0;
-  border-bottom: 1px solid ${props => props.theme.colors.border};
-`;
-
-const SectionTitle = styled.h2`
-  margin: 0;
-  color: ${props => props.theme.colors.primary};
-  font-size: 1rem;
-  text-transform: uppercase;
 `;
 
 const ChannelList = styled.div`
   flex: 1;
+  padding: 16px;
+  border-bottom: 2px solid ${props => props.theme.colors.border};
   overflow-y: auto;
+
+  h2 {
+    margin: 0 0 16px 0;
+    text-transform: uppercase;
+    color: ${props => props.theme.colors.primary};
+  }
 `;
 
 const UserList = styled.div`
   height: 200px;
+  padding: 16px;
+  border-top: 2px solid ${props => props.theme.colors.border};
   overflow-y: auto;
+
+  h2 {
+    margin: 0 0 16px 0;
+    text-transform: uppercase;
+    color: ${props => props.theme.colors.primary};
+  }
+`;
+
+const ChannelHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+
+  h2 {
+    margin: 0;
+    text-transform: uppercase;
+    color: ${props => props.theme.colors.primary};
+  }
+`;
+
+const CreateChannelButton = styled(Button)`
+  padding: 2px 8px;
+  font-size: 0.875rem;
+`;
+
+const ChannelGroup = styled.div`
+  margin-bottom: 16px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const GroupTitle = styled.h3`
+  margin: 0 0 8px 0;
+  padding: 4px 8px;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  color: ${props => props.theme.colors.textLight};
+  border-bottom: 1px solid ${props => props.theme.colors.border};
+  font-family: 'Courier New', monospace;
 `;
 
 const ChannelItem = styled.div<{ isActive: boolean }>`
@@ -66,6 +97,14 @@ const ChannelItem = styled.div<{ isActive: boolean }>`
 
   &:before {
     content: '#';
+    color: ${props => props.theme.colors.secondary};
+    margin-right: 0.5rem;
+  }
+`;
+
+const VoiceChannelItem = styled(ChannelItem)`
+  &:before {
+    content: '$';
     color: ${props => props.theme.colors.secondary};
     margin-right: 0.5rem;
   }
@@ -101,57 +140,163 @@ const UserItem = styled.div<{ status: string }>`
   }
 `;
 
+const LogoutButton = styled.button`
+  background: none;
+  border: 2px solid ${props => props.theme.colors.error};
+  color: ${props => props.theme.colors.error};
+  padding: 4px 8px;
+  font-family: 'VT323', monospace;
+  cursor: pointer;
+  text-transform: uppercase;
+
+  &:hover {
+    background: ${props => props.theme.colors.error};
+    color: ${props => props.theme.colors.background};
+  }
+`;
+
+const VoiceChannelContainer = styled.div`
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  background: ${props => props.theme.colors.backgroundDark};
+  border: 2px solid ${props => props.theme.colors.border};
+  border-radius: 8px;
+  padding: 16px;
+  width: 300px;
+  z-index: 100;
+  margin: 16px;
+`;
+
 interface SidebarProps {
   onCreateChannel: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ onCreateChannel }) => {
+  const navigate = useNavigate();
   const dispatch = useDispatch();
-  // All channels are accessible by default to all users
   const channels = useSelector((state: RootState) => state.chat.channels);
   const users = useSelector((state: RootState) => state.chat.users);
-  const activeChannelId = useSelector((state: RootState) => state.chat.activeChannelId);
+  const [activeVoiceChannel, setActiveVoiceChannel] = useState<Channel | null>(null);
 
-  const handleChannelClick = (channelId: string) => {
-    // Users can freely switch between any channel
-    dispatch(setActiveChannel(channelId));
+  // Filter channels
+  const textChannels = channels.filter((channel: Channel) => !channel.is_vc);
+  const publicChannels = textChannels.filter((channel: Channel) => channel.is_public && !channel.is_direct_message);
+  const privateChannels = textChannels.filter((channel: Channel) => !channel.is_public && !channel.is_direct_message);
+  const directMessages = textChannels.filter((channel: Channel) => channel.is_direct_message);
+  const voiceChannels = channels.filter((channel: Channel) => channel.is_vc);
+
+  const handleChannelClick = (channel: Channel) => {
+    if (channel.is_vc) {
+      // Toggle voice channel
+      if (activeVoiceChannel?.id === channel.id) {
+        setActiveVoiceChannel(null);
+      } else {
+        setActiveVoiceChannel(channel);
+      }
+    } else {
+      // Navigate to text channel
+      navigate(`/channels/${channel.id}`);
+    }
+  };
+
+  const handleLogout = () => {
+    dispatch(logout());
   };
 
   return (
-    <SidebarContainer>
-      <Section>
-        <SectionHeader>
-          <SectionTitle>Channels</SectionTitle>
-          <Button variant="secondary" size="small" onClick={onCreateChannel}>
-            +New
-          </Button>
-        </SectionHeader>
+    <>
+      <SidebarContainer>
         <ChannelList>
-          {/* Display all channels - no filtering based on permissions */}
-          {channels.map((channel: Channel) => (
-            <ChannelItem
-              key={channel.id}
-              isActive={channel.id === activeChannelId}
-              onClick={() => handleChannelClick(channel.id)}
-            >
-              {channel.name}
-            </ChannelItem>
-          ))}
+          <ChannelHeader>
+            <h2>Channels</h2>
+            <CreateChannelButton onClick={onCreateChannel}>
+              +
+            </CreateChannelButton>
+          </ChannelHeader>
+
+          {/* Public Text Channels */}
+          <ChannelGroup>
+            <GroupTitle>Public</GroupTitle>
+            {publicChannels.map((channel: Channel) => (
+              <ChannelItem
+                key={channel.id}
+                isActive={false}
+                onClick={() => handleChannelClick(channel)}
+              >
+                {channel.name}
+              </ChannelItem>
+            ))}
+          </ChannelGroup>
+
+          {/* Private Text Channels */}
+          {privateChannels.length > 0 && (
+            <ChannelGroup>
+              <GroupTitle>Private</GroupTitle>
+              {privateChannels.map((channel: Channel) => (
+                <ChannelItem
+                  key={channel.id}
+                  isActive={false}
+                  onClick={() => handleChannelClick(channel)}
+                >
+                  {channel.name}
+                </ChannelItem>
+              ))}
+            </ChannelGroup>
+          )}
+
+          {/* Direct Messages */}
+          {directMessages.length > 0 && (
+            <ChannelGroup>
+              <GroupTitle>Direct Messages</GroupTitle>
+              {directMessages.map((channel: Channel) => (
+                <ChannelItem
+                  key={channel.id}
+                  isActive={false}
+                  onClick={() => handleChannelClick(channel)}
+                >
+                  {channel.name}
+                </ChannelItem>
+              ))}
+            </ChannelGroup>
+          )}
+
+          {/* Voice Channels */}
+          <ChannelGroup>
+            <GroupTitle>Voice</GroupTitle>
+            {voiceChannels.map((channel: Channel) => (
+              <VoiceChannelItem
+                key={channel.id}
+                isActive={channel.id === activeVoiceChannel?.id}
+                onClick={() => handleChannelClick(channel)}
+              >
+                {channel.name}
+              </VoiceChannelItem>
+            ))}
+          </ChannelGroup>
         </ChannelList>
-      </Section>
-      <Section>
-        <SectionHeader>
-          <SectionTitle>Online Users</SectionTitle>
-        </SectionHeader>
+
         <UserList>
-          {Object.values(users).map((user: User) => (
+          <h2>Users</h2>
+          {Object.values(users as Record<string, User>).map((user: User) => (
             <UserItem key={user.id} status={user.status || 'offline'}>
               {user.username}
             </UserItem>
           ))}
         </UserList>
-      </Section>
-    </SidebarContainer>
+
+        <LogoutButton onClick={handleLogout}>
+          Logout
+        </LogoutButton>
+      </SidebarContainer>
+
+      {/* Active Voice Channel */}
+      {activeVoiceChannel && (
+        <VoiceChannelContainer>
+          <VoiceChannel channelId={activeVoiceChannel.id} />
+        </VoiceChannelContainer>
+      )}
+    </>
   );
 };
 

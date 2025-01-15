@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .api.v1 import users, channels, messages, files, reactions, search, websockets, ai_features
+from .api.v1 import users, channels, messages, files, reactions, search, websockets, ai_features, voice
 from .auth.router import router as auth_router
 from .database import init_db
 import logging
@@ -35,9 +35,10 @@ app.include_router(reactions.router, prefix="/api/messages", tags=["reactions"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(ai_features.router, prefix="/api/v1/ai", tags=["ai"])
 
-# Mount WebSocket router without prefix to avoid path duplication
-logger.debug("Mounting WebSocket router")
+# Mount WebSocket routers without prefix to avoid path duplication
+logger.debug("Mounting WebSocket routers")
 app.include_router(websockets.router, tags=["websockets"])
+app.include_router(voice.router, tags=["voice"])
 
 @app.get("/")
 async def root():
