@@ -6,3 +6,4 @@ __pycache__/
 large_test_file.txt 
 
 venv/
+.coverage

@@ -15,6 +15,7 @@ from ...models.message import Message
 from ...models.channel import Channel
 from ..deps import get_db, get_current_user
 from ...models.user import User
+from ...ai.file_description import process_file
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -194,6 +195,25 @@ async def upload_file(
         
         try:
             db.add(db_file)
+            db.flush()  # Get the ID without committing
+            
+            # Generate file description if applicable
+            if file.content_type.startswith(('text/', 'image/')) or file.content_type == 'application/pdf':
+                try:
+                    description = await process_file(
+                        file_path=file_path,
+                        file_type=file.content_type,
+                        file_id=db_file.id,
+                        filename=filename,
+                        uploaded_by=current_user.username,
+                        pinecone_index=os.getenv("PINECONE_INDEX_TWO", ""),
+                        created_at=db_file.created_at
+                    )
+                    if description:
+                        db_file.description = description
+                except Exception as e:
+                    logger.error(f"Error generating file description: {str(e)}")
+                    # Continue without description if there's an error
             
             # Update message has_attachments if message_id is provided
             if message_id:
@@ -211,6 +231,7 @@ async def upload_file(
                 file_type=db_file.file_type,
                 file_size=db_file.file_size,
                 file_path=db_file.file_path,
+                description=db_file.description,  # Include description in response
                 message_id=db_file.message_id,
                 uploaded_by_id=db_file.uploaded_by_id,
                 created_at=db_file.created_at,

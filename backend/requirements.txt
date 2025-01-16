@@ -33,7 +33,7 @@ requests==2.32.3
 aiohttp>=3.9.5,<4.0.0
 
 # AI/ML Dependencies
-openai==1.59.7
+openai>=1.40.0,<2.0.0
 langchain==0.2.15
 langchain-community==0.2.15
 langchain-core==0.2.37
@@ -75,6 +75,10 @@ tiktoken>=0.7.0,<1.0.0
 tqdm==4.66.1
 typing-inspect==0.9.0
 yarl==1.9.4
+
+# File Processing
+pillow==10.2.0  # For image processing
+pymupdf==1.23.8  # For PDF processing
 
 # Development & Testing
 pytest==8.3.4

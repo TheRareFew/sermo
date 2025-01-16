@@ -7,6 +7,7 @@ class FileBase(BaseModel):
     file_type: str
     file_size: int
     file_path: str
+    description: Optional[str] = None
 
 class FileCreate(FileBase):
     message_id: Optional[int] = None

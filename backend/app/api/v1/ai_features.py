@@ -70,29 +70,62 @@ async def send_message_to_bot(
     embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
     logger.info("Initialized embeddings")
 
-    # Set up Pinecone vector store
+    # Set up Pinecone vector stores for both messages and files
     index_name = os.getenv("PINECONE_INDEX_TWO")
-    document_vectorstore = PineconeVectorStore(
+    
+    # Messages vectorstore
+    messages_vectorstore = PineconeVectorStore(
         index_name=index_name,
         embedding=embeddings,
         namespace="messages"
     )
-    retriever = document_vectorstore.as_retriever(
-        search_kwargs={"k": 10}  # Retrieve top 5 most relevant documents
+    messages_retriever = messages_vectorstore.as_retriever(
+        search_kwargs={"k": 5}  # Retrieve top 5 most relevant messages
     )
-    logger.info("Initialized Pinecone vector store")
+    
+    # Files vectorstore
+    files_vectorstore = PineconeVectorStore(
+        index_name=index_name,
+        embedding=embeddings,
+        namespace="files"
+    )
+    files_retriever = files_vectorstore.as_retriever(
+        search_kwargs={"k": 5}  # Retrieve top 5 most relevant files
+    )
+    
+    logger.info("Initialized Pinecone vector stores")
 
-    # Retrieve relevant documents
-    context_docs = retriever.invoke(request.message)
-    logger.info(f"Retrieved {len(context_docs)} documents")
-    for i, doc in enumerate(context_docs):
-        logger.info(f"Document {i + 1} content: {doc.page_content}")
-        logger.info(f"Document {i + 1} metadata: {doc.metadata}")
+    # Retrieve relevant documents from both namespaces
+    message_docs = messages_retriever.invoke(request.message)
+    file_docs = files_retriever.invoke(request.message)
+    
+    logger.info(f"Retrieved {len(message_docs)} message documents and {len(file_docs)} file documents")
 
-    context = "\n\n".join([
+    # Format message context
+    message_context = "\n\n".join([
         f"Message: {doc.page_content}\nFrom: {doc.metadata.get('sender')}\nChannel: {doc.metadata.get('channel')}\nTime: {doc.metadata.get('timestamp')}"
-        for doc in context_docs
+        for doc in message_docs
     ])
+    logger.info(f"Message context length: {len(message_context)}")
+    logger.info(f"Message context content: {message_context}")
+
+    # Format file context
+    file_context = "\n\n".join([
+        f"File Description: {doc.page_content}\nFile: {doc.metadata.get('filename')}\nUploaded by: {doc.metadata.get('uploaded_by')}\nUploaded on: {doc.metadata.get('upload_date')}"
+        for doc in file_docs
+    ])
+    logger.info(f"File context length: {len(file_context)}")
+    logger.info(f"File context content: {file_context}")
+
+    # Combine contexts with headers
+    combined_context = ""
+    if message_context:
+        combined_context += "Related Messages:\n" + message_context
+    if file_context:
+        if combined_context:
+            combined_context += "\n\nRelated Files:\n" + file_context
+        else:
+            combined_context += "Related Files:\n" + file_context
 
     # Get Lain's previous messages with this user
     lain_user = db.query(User).filter(User.is_bot == True).first()
@@ -102,38 +135,51 @@ async def send_message_to_bot(
             Message.parent_id.in_(
                 db.query(Message.id).filter(Message.sender_id == current_user.id)
             )
-        ).order_by(Message.created_at.desc()).limit(10).all()
+        ).order_by(Message.created_at.desc()).limit(5).all()
         
         if lain_messages:
             # Add Lain's previous messages to context
             lain_context = "\n\n".join([
                 f"Previous Conversation:\n{msg.parent.sender.username}: {msg.parent.content}\nLain: {msg.content}"
                 for msg in reversed(lain_messages)
-                if msg.parent is not None and msg.parent.sender is not None  # Only include messages where we can find the parent and sender
+                if msg.parent is not None and msg.parent.sender is not None
             ])
-            context = f"{lain_context}\n\n{context}" if context else lain_context
+            logger.info(f"Lain context length: {len(lain_context)}")
+            logger.info(f"Lain context content: {lain_context}")
+            combined_context = f"{lain_context}\n\n{combined_context}" if combined_context else lain_context
 
-    # Create prompt with context
+    logger.info(f"Total combined context length: {len(combined_context)}")
+
+    # Create prompt with combined context
     template = PromptTemplate(
-        template="""You are Lain Iwakura, a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Use the provided context to answer the user's question.Be nonchalant. Don't be over enthusiastic. Don't act like you care. Don't go out of your way to be nice. Only use information from the context provided. If you can't find relevant information in the context, say so.
+        template="""You are Lain Iwakura, a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Use the provided context to answer the user's question. Be nonchalant. Don't be over enthusiastic. Don't act like you care. Don't go out of your way to be nice. Only use information from the context provided. If you can't find relevant information in the context, say so.
 
 Previous conversations with {username} (if any) and other relevant context:
 {context}
 
 {username}'s Question: {query}
 
+Remember to reference specific details from the context in your response. If you see relevant files or messages, mention them directly. If you're using information from a specific file or message, indicate where that information came from.
+
 Answer as Lain Iwakura, maintaining consistency with any previous conversations shown in the context. If no relevant information is found, say so, but still be conversational about it. Please don't start your response with 'Lain:'""",
         input_variables=["query", "context", "username"]
     )
     prompt_with_context = template.invoke({
         "query": request.message, 
-        "context": context,
+        "context": combined_context,
         "username": current_user.username
     })
+    logger.info(f"Final prompt length: {len(prompt_with_context.to_string())}")
     logger.info(f"Generated prompt with context: {prompt_with_context}")
 
-    # Query the LLM
-    llm = ChatOpenAI(temperature=0.7, model_name="gpt-4o-mini")
+    # Query the LLM with more explicit instructions about temperature
+    llm = ChatOpenAI(
+        temperature=0.5,  # Reduced temperature for more focused responses
+        model_name="gpt-4o-mini",
+        model_kwargs={
+            "response_format": { "type": "text" }
+        }
+    )
     results = llm.invoke(prompt_with_context)
     logger.info(f"LLM response: {results.content}")
 
