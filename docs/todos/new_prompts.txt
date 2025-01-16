@@ -1,0 +1,10 @@
+Write your response in markdown format. Replace the backticks for code within the markdown with [CODE START] and [CODE END].
+
+Use checkboxes to keep track of progress.
+
+Analyze every part of the project having to do with <thing>.
+
+
+Do not alter aesthetics. Only worry about function.
+
+Follow the instructions. Edit the markdown file as needed, tracking progress and noting any changes.

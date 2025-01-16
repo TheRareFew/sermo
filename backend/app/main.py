@@ -4,6 +4,11 @@ from .api.v1 import users, channels, messages, files, reactions, search, websock
 from .auth.router import router as auth_router
 from .database import init_db
 import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -12,7 +17,9 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Chat API", version="1.0.0")
 
 # Initialize database tables
-init_db()
+# Only create test data if we're in development mode
+is_development = os.getenv("ENVIRONMENT", "development").lower() == "development"
+init_db(create_test_data=is_development)
 
 # Configure CORS
 app.add_middleware(
@@ -33,7 +40,7 @@ app.include_router(messages.router, prefix="/api/messages", tags=["messages"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(reactions.router, prefix="/api/messages", tags=["reactions"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
-app.include_router(ai_features.router, prefix="/api/v1/ai", tags=["ai"])
+app.include_router(ai_features.router, prefix="/api/ai", tags=["ai"])
 
 # Mount WebSocket router without prefix to avoid path duplication
 logger.debug("Mounting WebSocket router")

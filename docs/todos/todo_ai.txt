@@ -1,0 +1,59 @@
+Goal: Create a chatbot that develops a personality based on all of the messages it has seen.
+
+Deisgn:
+    - get data for all messages, including sender, channel, content, and timestamp
+    - feed pinecone with all message data, using each message as a vector
+    - create context for gpt to use for its personality and output format
+    - prompt gpt with message when user @terrence
+    - gpt will respond with a message, maybe ask a follow up question
+    - use upload.py and main.py in the ai_demo directory for reference on general RAG with chatbot implementation
+
+
+Needs:
+    - script to update pinecone with all message data X
+        - use upload.py as reference
+        - use messages as chunks
+        - prompt: We want to write a python script that will upload all of the messages in the database to pinecone. Data for each message should include the sender, channel, content, and timestamp. Use langchain and pinecone to do this. 
+        Write a plan of action in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+    - api endpoint for sending message to bot X
+        - message sent to @terrence
+        - query gpt for response
+            - use main.py as reference
+        - send websocket message broadcast
+        - prompt: We want to add an api endpoint that will send a message to the bot. The message will be sent to @terrence. The bot will respond with a message, maybe ask a follow up question. Use main.py as reference for querying the LLM. Add a new module in the v1 directory called ai_features.py for this endpoint. Write a plan of action in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress. 
+
+    - frontend code
+    - way to delinate between user messages and bot messages, make it subtle (robot emoji)
+    - Prompt: We want to add a frontend to the chatbot. A user will be able to send a message to @lain. Use the new api endpoint /api/v1/ai/message to send the message to the bot. Use the new api endpoint /api/v1/ai/message to get the bot's response.Broadcast a websocket message to all connected clients when the bot responds. Make the bot look like a regular user, with a robot emoji in place of the user's name.
+    
+     Write a plan of action in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress. 
+
+
+Process
+script for uploading messages to pinecone X
+endpoint for sending message to bot X
+
+
+Next:
+    - add prior messages to context
+        - make plan X
+        - prompt: We want to add prior messages to the context for the LLM.
+    - track time user spends online. We want to make a new endpoint that will return lain's most recent 10 messages where the parent message belongs to the prompting user. 
+    1. You will need to add an endpoint to retreive these messages from the database. 
+    2. You will need to dynamically update lain's context in ai_features.py with these messages.
+    Imagine you are a senior software engineer writing a plan of action for a junior engineer. Do not use formalities to address the junior engineer. Just focus on the task at hand.
+    Develop a plan of action in markdown form. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress. 
+
+        - update schema
+        - add endpoint
+        - add to bot context
+    - speech to text
+        - update schema
+        - add backend script that feeds user speech to speech to text api and updates database
+        - add endpoint
+        - add to bot context
+
+    - voice cloning
+        - research
+        - plan
+    

@@ -1,0 +1,23 @@
+- add to context for lain
+    - analyze files and store file descriptions in database
+        - add description column to file table
+        - pass file through llm upon user upload to get description/summary
+            - use different prompt for different types of files
+                - pdfs: extract text and metadata
+                - text files: extract text
+                - images: view image and describe it
+        - store description with file entry in database
+        - send info on file to pinecone database
+        - prompt: We want to add the ability to pass files to gpt-4o-mini and receive a summary of the file. PDFs and other text files should be summarized, while images should be described. Let's modify the file upload backend to acheive this. We'll need to add a description column to the file table. We'll also want to upload the file description to our pinecone database.
+        Imagine you're a senior developer writing a plan of action for a junior developer. Do not directly reference that the recepient is a junior developer. Do not address the recepient outside of providing instructions.
+        Write a markdown file that contains the plan of action. Enclose it in backticks. For the code snippets in the markdown file, don't use backticks. Replace the backticks for code within the markdown with [CODE START] and [CODE END]. Use checkboxes to keep track of progress.
+    - chat summary for each channel, including messages and file uploads
+            - store summaries in pinecone database
+    - add timestamps from prior lain messages to context
+    - scale up to have other bots
+        - other bots emulate users and have their own context dependent on the user
+            - idea: Generate context for each user based on their prior messages and file uploads. Run this every time the user logs off.
+                - time the user is usually active
+                - how the user writes messages
+
+

@@ -12,6 +12,6 @@ interface AiMessageResponse {
 }
 
 export const sendAiMessage = async (data: AiMessageRequest): Promise<AiMessageResponse> => {
-  const response = await api.post<AiMessageResponse>('/v1/ai/message', data);
+  const response = await api.post<AiMessageResponse>('/api/ai/message', data);
   return response.data;
 }; 

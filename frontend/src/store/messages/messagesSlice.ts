@@ -63,6 +63,9 @@ const messagesSlice = createSlice({
         }
       });
 
+      // Sort messages by createdAt timestamp
+      mainMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
       state.messagesByChannel[channelId] = mainMessages;
       console.log('Updated messages state:', state.messagesByChannel[channelId]);
     },
@@ -155,6 +158,9 @@ const messagesSlice = createSlice({
           message.replyCount = repliesByParentId[message.id].length;
         }
       });
+
+      // Sort messages by createdAt timestamp
+      mainMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
       if (replace) {
         // Replace all messages in the channel

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain.prompts.prompt import PromptTemplate
@@ -25,9 +26,8 @@ router = APIRouter()
 # Load and validate environment variables
 load_dotenv()
 
-# Initialize LangSmith client for proper cleanup
+# Initialize LangSmith client
 langsmith_client = Client()
-atexit.register(lambda: langsmith_client.close_session())
 
 # Validate required environment variables
 required_vars = ["OPENAI_API_KEY", "PINECONE_API_KEY", "PINECONE_INDEX_TWO"]
@@ -44,6 +44,19 @@ class MessageRequest(BaseModel):
 class MessageResponse(BaseModel):
     response: str
     message_id: str
+
+# Add Pydantic model for Lain's messages
+class LainMessageResponse(BaseModel):
+    id: int
+    content: str
+    created_at: datetime
+    sender_id: int
+    channel_id: int
+    parent_id: Optional[int]
+    is_bot: bool
+
+    class Config:
+        from_attributes = True  # Allows the model to read data from ORM objects
 
 @router.post("/message", response_model=MessageResponse)
 async def send_message_to_bot(
@@ -65,7 +78,7 @@ async def send_message_to_bot(
         namespace="messages"
     )
     retriever = document_vectorstore.as_retriever(
-        search_kwargs={"k": 5}  # Retrieve top 5 most relevant documents
+        search_kwargs={"k": 10}  # Retrieve top 5 most relevant documents
     )
     logger.info("Initialized Pinecone vector store")
 
@@ -81,23 +94,46 @@ async def send_message_to_bot(
         for doc in context_docs
     ])
 
+    # Get Lain's previous messages with this user
+    lain_user = db.query(User).filter(User.is_bot == True).first()
+    if lain_user:
+        lain_messages = db.query(Message).filter(
+            Message.sender_id == lain_user.id,
+            Message.parent_id.in_(
+                db.query(Message.id).filter(Message.sender_id == current_user.id)
+            )
+        ).order_by(Message.created_at.desc()).limit(10).all()
+        
+        if lain_messages:
+            # Add Lain's previous messages to context
+            lain_context = "\n\n".join([
+                f"Previous Conversation:\n{msg.parent.sender.username}: {msg.parent.content}\nLain: {msg.content}"
+                for msg in reversed(lain_messages)
+                if msg.parent is not None and msg.parent.sender is not None  # Only include messages where we can find the parent and sender
+            ])
+            context = f"{lain_context}\n\n{context}" if context else lain_context
+
     # Create prompt with context
     template = PromptTemplate(
-        template="""You are Lain Iwakura, a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Use the provided context to answer the user's question. Only use information from the context provided. If you can't find relevant information in the context, say so.
+        template="""You are Lain Iwakura, a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Use the provided context to answer the user's question.Be nonchalant. Don't be over enthusiastic. Don't act like you care. Don't go out of your way to be nice. Only use information from the context provided. If you can't find relevant information in the context, say so.
 
-Context:
+Previous conversations with {username} (if any) and other relevant context:
 {context}
 
-User Question: {query}
+{username}'s Question: {query}
 
-Answer as Lain Iwakura. If no relevant information is found, say so, but still be conversational about it.""",
-        input_variables=["query", "context"]
+Answer as Lain Iwakura, maintaining consistency with any previous conversations shown in the context. If no relevant information is found, say so, but still be conversational about it. Please don't start your response with 'Lain:'""",
+        input_variables=["query", "context", "username"]
     )
-    prompt_with_context = template.invoke({"query": request.message, "context": context})
+    prompt_with_context = template.invoke({
+        "query": request.message, 
+        "context": context,
+        "username": current_user.username
+    })
     logger.info(f"Generated prompt with context: {prompt_with_context}")
 
     # Query the LLM
-    llm = ChatOpenAI(temperature=0.7, model_name="gpt-4")
+    llm = ChatOpenAI(temperature=0.7, model_name="gpt-4o-mini")
     results = llm.invoke(prompt_with_context)
     logger.info(f"LLM response: {results.content}")
 
@@ -140,3 +176,39 @@ Answer as Lain Iwakura. If no relevant information is found, say so, but still b
         response=results.content,
         message_id=str(bot_message.id)
     ) 
+
+# Update endpoint to use the new response model
+@router.get("/lain_messages", response_model=List[LainMessageResponse])
+async def get_lain_messages(
+    user_id: Optional[int] = None,
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve Lain's most recent messages in response to a specific user.
+    If user_id is not provided, uses the current authenticated user.
+    """
+    # Use current user's ID if no specific user_id provided
+    target_user_id = user_id if user_id is not None else current_user.id
+    
+    # Verify user exists if a specific user_id was provided
+    if user_id is not None:
+        target_user = db.query(User).filter(User.id == user_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get Lain's user ID (assuming it's stored in the database)
+    lain_user = db.query(User).filter(User.is_bot == True).first()
+    if not lain_user:
+        raise HTTPException(status_code=404, detail="Lain bot user not found")
+    
+    # Query for Lain's messages where parent messages belong to the target user
+    messages = db.query(Message).filter(
+        Message.sender_id == lain_user.id,
+        Message.parent_id.in_(
+            db.query(Message.id).filter(Message.sender_id == target_user_id)
+        )
+    ).order_by(Message.created_at.desc()).limit(limit).all()
+    
+    return messages 

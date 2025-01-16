@@ -60,7 +60,7 @@ def create_test_users(db_session):
         print(f"Error creating test users: {e}")
         db_session.rollback()
 
-def init_db():
+def init_db(create_test_data: bool = False):
     """Initialize database tables"""
     # Import all models here to ensure they are registered with SQLAlchemy
     from .models.user import User
@@ -71,19 +71,26 @@ def init_db():
     from .models.reaction import Reaction
     from .auth.security import RefreshToken
     
-    print("Dropping all tables...")
-    Base.metadata.drop_all(bind=engine)
-    print("Creating all tables...")
-    Base.metadata.create_all(bind=engine)
+    # Check if tables exist by trying to query the User table
+    from sqlalchemy import inspect
+    inspector = inspect(engine)
+    tables_exist = inspector.has_table("users")
     
-    # Create test users
-    print("Creating test users...")
-    db = SessionLocal()
-    try:
-        create_test_users(db)
-    finally:
-        db.close()
-    print("Database initialization complete!")
+    if not tables_exist:
+        print("Creating all tables...")
+        Base.metadata.create_all(bind=engine)
+        
+        if create_test_data:
+            # Create test users only if tables were just created
+            print("Creating test users...")
+            db = SessionLocal()
+            try:
+                create_test_users(db)
+            finally:
+                db.close()
+        print("Database initialization complete!")
+    else:
+        print("Tables already exist, skipping initialization.")
 
 # Dependency to get DB session
 def get_db():
