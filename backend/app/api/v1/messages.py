@@ -128,7 +128,8 @@ async def create_message(
             content=content,  # Use potentially modified content
             channel_id=channel_id,
             sender_id=current_user.id,
-            has_attachments=bool(message.file_ids)
+            has_attachments=bool(message.file_ids),
+            is_bot=message.is_bot
         )
         db.add(db_message)
         db.commit()

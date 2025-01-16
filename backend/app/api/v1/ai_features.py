@@ -86,7 +86,7 @@ async def send_message_to_bot(
     )
     messages_retriever = messages_vectorstore.as_retriever(
         search_kwargs={
-            "k": 10,  # Retrieve more messages initially to filter
+            "k": 10,
             "filter": {"is_bot": False}  # Only retrieve non-bot messages
         }
     )
@@ -134,47 +134,43 @@ async def send_message_to_bot(
     )[:5]  # Keep only the 5 most recent unique messages
     
     # Format message context with clearer temporal information
-    message_context = "User Messages (newest first):\n" + "\n\n".join([
+    message_context = "=== RECENT USER MESSAGES ===\n(Showing newest first)\n\n" + "\n\n".join([
         f"[{doc.metadata.get('timestamp')}]\n"
+        f"User: {doc.metadata.get('sender')}\n"
         f"Channel: {doc.metadata.get('channel')}\n"
         f"Message: {doc.page_content}"
         for doc in message_docs_sorted
     ])
-    logger.info(f"Message context length: {len(message_context)}")
-    logger.info(f"Message context content: {message_context}")
 
-    # Format file chunks context
-    file_chunks_context = "\n\n".join([
-        f"""File Content: {doc.page_content}
-        From File: {doc.metadata.get('filename')}
-        Chunk {doc.metadata.get('chunk_index')} of {doc.metadata.get('total_chunks')}
-        File Type: {doc.metadata.get('file_type')}
-        Message Text: {doc.metadata.get('message_text')}
-        Uploaded by: {doc.metadata.get('uploaded_by')}
-        Uploaded on: {doc.metadata.get('upload_date')}"""
+    # Format file chunks context with clear separation
+    file_chunks_context = "=== RELEVANT FILE CONTENT ===\n\n" + "\n\n".join([
+        f"[File Chunk {doc.metadata.get('chunk_index')} of {doc.metadata.get('total_chunks')}]\n"
+        f"From: {doc.metadata.get('filename')}\n"
+        f"Type: {doc.metadata.get('file_type')}\n"
+        f"Uploaded by: {doc.metadata.get('uploaded_by')} on {doc.metadata.get('upload_date')}\n"
+        f"Content:\n{doc.page_content}"
         for doc in file_chunks
     ])
 
-    # Format file descriptions context
-    file_descriptions_context = "\n\n".join([
-        f"""File Summary: {doc.page_content}
-        File: {doc.metadata.get('filename')}
-        File Type: {doc.metadata.get('file_type')}
-        Message Text: {doc.metadata.get('message_text')}
-        Uploaded by: {doc.metadata.get('uploaded_by')}
-        Uploaded on: {doc.metadata.get('upload_date')}"""
+    # Format file descriptions context with clear separation
+    file_descriptions_context = "=== FILE SUMMARIES ===\n\n" + "\n\n".join([
+        f"[File: {doc.metadata.get('filename')}]\n"
+        f"Type: {doc.metadata.get('file_type')}\n"
+        f"Uploaded by: {doc.metadata.get('uploaded_by')} on {doc.metadata.get('upload_date')}\n"
+        f"Summary:\n{doc.page_content}"
         for doc in file_descriptions
     ])
 
+    logger.info(f"Message context length: {len(message_context)}")
     logger.info(f"File chunks context length: {len(file_chunks_context)}")
     logger.info(f"File descriptions context length: {len(file_descriptions_context)}")
 
-    # Combine contexts with headers
+    # Combine contexts with clear separations
     combined_context = ""
     
     # Add message context first
-    if message_context:
-        combined_context += message_context
+    if message_context.strip() != "=== RECENT USER MESSAGES ===\n(Showing newest first)":
+        combined_context += message_context + "\n\n"
     
     # Add Lain's previous interactions
     lain_user = db.query(User).filter(User.is_bot == True).first()
@@ -188,21 +184,21 @@ async def send_message_to_bot(
         
         if lain_messages:
             # Add Lain's previous messages to context with timestamps
-            lain_context = "\n\nRecent interactions:\n" + "\n\n".join([
+            lain_context = "=== RECENT INTERACTIONS WITH LAIN ===\n\n" + "\n\n".join([
                 f"[{msg.created_at.isoformat()}]\n"
                 f"You: {msg.parent.content}\n"
-                f"Response: {msg.content}"
+                f"Lain: {msg.content}"
                 for msg in reversed(lain_messages)
                 if msg.parent is not None and msg.parent.content != request.message  # Exclude current question
             ])
-            if lain_context.strip() != "Recent interactions:":  # Only add if there are actual interactions
-                combined_context += lain_context
+            if lain_context.strip() != "=== RECENT INTERACTIONS WITH LAIN ===":  # Only add if there are actual interactions
+                combined_context += lain_context + "\n\n"
     
     # Add file information
-    if file_descriptions_context:
-        combined_context += "\n\nFile Summaries:\n" + file_descriptions_context
-    if file_chunks_context:
-        combined_context += "\n\nRelevant File Content:\n" + file_chunks_context
+    if file_descriptions_context.strip() != "=== FILE SUMMARIES ===":
+        combined_context += file_descriptions_context + "\n\n"
+    if file_chunks_context.strip() != "=== RELEVANT FILE CONTENT ===":
+        combined_context += file_chunks_context
 
     logger.info(f"Total combined context length: {len(combined_context)}")
 

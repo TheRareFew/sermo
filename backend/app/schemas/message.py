@@ -8,7 +8,10 @@ class MessageBase(BaseModel):
     content: Optional[str] = Field(None, description="Message content")
 
 class MessageCreate(MessageBase):
+    channel_id: int = Field(description="ID of the channel")
+    parent_id: Optional[int] = Field(default=None, description="ID of the parent message if this is a reply")
     file_ids: Optional[List[int]] = Field(default=None, description="List of file IDs to attach to the message")
+    is_bot: Optional[bool] = False
     
     @property
     def is_valid(self) -> bool:
@@ -41,5 +44,6 @@ class Message(MessageBase):
     reactions: List[Reaction] = []
     files: List[File] = []
     has_attachments: bool = False
+    is_bot: bool = False
 
     model_config = {"from_attributes": True} 

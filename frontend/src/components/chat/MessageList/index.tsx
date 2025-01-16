@@ -421,7 +421,7 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
           channelId, 
           message: {
             ...transformedReply,
-            parentId: selectedMessage.id,
+            parent_id: selectedMessage.id,
             attachments: []
           }
         }));
@@ -485,12 +485,12 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
             <Message
               id={message.id}
               content={message.content}
-              sender={users[message.userId]?.username || 'Unknown User'}
-              timestamp={message.createdAt}
-              userId={message.userId}
+              sender={users[message.sender_id]?.username || 'Unknown User'}
+              timestamp={message.created_at}
+              userId={message.sender_id}
               currentUserId={currentUser?.id}
               onDelete={() => handleDeleteMessage(message.id)}
-              replyCount={message.replyCount}
+              replyCount={message.reply_count}
               isExpanded={message.isExpanded || false}
               onToggleReplies={() => handleToggleReplies(message.id)}
               onReply={() => handleReply(message)}
@@ -499,7 +499,7 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
               onReactionRemove={(emoji) => handleReactionRemove(message.id, emoji)}
               attachments={message.attachments}
               has_attachments={message.has_attachments}
-              isBot={message.isBot}
+              is_bot={message.is_bot}
               onContentLoad={() => handleContentLoad(message.id)}
             />
             {message.isExpanded && message.replies && (

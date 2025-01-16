@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import MessageOptions from '../../chat/MessageOptions';
 import FilePreview from '../FilePreview';
 import { Reaction, Attachment } from '../../../types';
 import { getMessageFiles } from '../../../services/api/files';
+import { elevenLabsService } from '../../../utils/elevenLabs';
 
 export interface ChatMessageProps {
   id: string;
@@ -23,16 +24,23 @@ export interface ChatMessageProps {
   onReactionRemove?: (emoji: string) => void;
   attachments?: Attachment[];
   has_attachments?: boolean;
-  isBot?: boolean;
+  is_bot?: boolean;
   onContentLoad?: () => void;
 }
 
-const MessageContainer = styled.div<{ $isReply?: boolean }>`
+const Sender = styled.span<{ $is_bot?: boolean }>`
+  color: ${props => props.$is_bot && props.children === 'lain' ? '#ff00ff' : '#0f0'};
+  font-weight: bold;
+`;
+
+const MessageContainer = styled.div<{ $isReply: boolean }>`
   font-family: 'Courier New', monospace;
   padding: 0;
   color: #fff;
   position: relative;
-  
+  margin-left: ${props => props.$isReply ? '20px' : '0'};
+  border-left: ${props => props.$isReply ? '2px solid #333' : 'none'};
+
   &:hover {
     background-color: #2a2a2a;
   }
@@ -84,11 +92,6 @@ const ReactionsContainer = styled.div`
 
 const Timestamp = styled.span`
   color: #888;
-`;
-
-const Sender = styled.span<{ $isBot?: boolean }>`
-  color: ${props => props.$isBot ? '#ff00ff' : '#0f0'};
-  font-weight: bold;
 `;
 
 const ReplyCount = styled.button`
@@ -147,6 +150,36 @@ const AttachmentIcon = styled.span`
   }
 `;
 
+interface VoiceIndicatorProps {
+  $isPlaying: boolean;
+}
+
+const VoiceIndicator = styled.span<VoiceIndicatorProps>`
+  color: #ff00ff;
+  margin-left: 4px;
+  cursor: pointer;
+  opacity: ${props => props.$isPlaying ? 1 : 0.6};
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
+const Tooltip = styled.div`
+  position: absolute;
+  background-color: #ff0000;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 1000;
+  max-width: 200px;
+  word-wrap: break-word;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+`;
+
 const ChatMessage: React.FC<ChatMessageProps> = ({
   id,
   content,
@@ -165,13 +198,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   onReactionRemove,
   attachments = [],
   has_attachments = false,
-  isBot = false,
+  is_bot = false,
   onContentLoad,
 }) => {
   const [showAttachments, setShowAttachments] = useState(false);
   const [loadedAttachments, setLoadedAttachments] = useState<Attachment[]>(attachments);
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const errorTimeoutRef = useRef<NodeJS.Timeout>();
+
+  useEffect(() => {
+    if (is_bot && content && onContentLoad) {
+      onContentLoad();
+    }
+  }, [is_bot, content, onContentLoad]);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleAttachmentToggle = useCallback(async () => {
     if (!has_attachments) return;
@@ -196,6 +246,27 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
       onContentLoad();
     }
   }, [id, has_attachments, showAttachments, loadedAttachments.length, onContentLoad]);
+
+  const handleVoicePlayback = useCallback(async () => {
+    if (!is_bot || !sender || typeof sender !== 'string' || sender.toLowerCase() !== 'lain' || isPlayingVoice) return;
+    
+    try {
+      setPlaybackError(null);
+      setIsPlayingVoice(true);
+      await elevenLabsService.playTextAudio(content);
+    } catch (error) {
+      console.error('Error playing voice:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to play voice message';
+      setPlaybackError(errorMessage);
+      
+      // Clear error after 5 seconds
+      errorTimeoutRef.current = setTimeout(() => {
+        setPlaybackError(null);
+      }, 5000);
+    } finally {
+      setIsPlayingVoice(false);
+    }
+  }, [content, sender, is_bot, isPlayingVoice]);
 
   const formattedTime = new Date(timestamp).toLocaleTimeString([], { 
     hour: '2-digit', 
@@ -242,7 +313,23 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
       <MessageContent>
         <MessageRow>
           <MessageText>
-            <Sender $isBot={isBot}>{sender}</Sender> [{formattedTime}]: {content}
+            <Sender $is_bot={is_bot}>{sender}</Sender> [{formattedTime}]: {content}
+            {is_bot && sender && typeof sender === 'string' && sender.toLowerCase() === 'lain' && (
+              <VoiceIndicator 
+                onClick={handleVoicePlayback}
+                $isPlaying={isPlayingVoice}
+                title={isPlayingVoice ? "Playing voice..." : "Play voice"}
+              >
+                {isPlayingVoice ? '🔊' : '🔈'}
+              </VoiceIndicator>
+            )}
+            {playbackError && (
+              <Tooltip>
+                {playbackError}
+              </Tooltip>
+            )}
+          </MessageText>
+          <ButtonsContainer>
             {has_attachments && (
               <AttachmentIcon onClick={handleAttachmentToggle} title="Toggle attachments">
                 📎
@@ -253,17 +340,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 [{isExpanded ? '-' : '+'} {replyCount} {replyCount === 1 ? 'reply' : 'replies'}]
               </ReplyCount>
             )}
-          </MessageText>
-          <ButtonsContainer>
-            <MessageOptions
-              messageId={id}
-              onDelete={onDelete}
-              onReply={onReply}
-              canDelete={isOwnMessage}
-              canReply={!isBot}
-              onReactionAdd={onReactionAdd}
-              onReactionRemove={onReactionRemove}
-            />
+            <OptionsWrapper>
+              <MessageOptions
+                messageId={id}
+                onDelete={onDelete}
+                onReply={onReply}
+                canDelete={isOwnMessage}
+                canReply={!is_bot}
+                onReactionAdd={onReactionAdd}
+                onReactionRemove={onReactionRemove}
+              />
+            </OptionsWrapper>
           </ButtonsContainer>
         </MessageRow>
         {Object.entries(groupedReactions).length > 0 && (

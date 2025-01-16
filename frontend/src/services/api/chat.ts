@@ -77,12 +77,14 @@ export const getChannelMessages = async (
     // Validate and transform messages
     const validMessages = messages
       .filter(msg => msg && msg.id && msg.content && msg.channel_id && msg.sender_id)
-      .map(msg => {
-        console.log('[DEBUG] Processing message:', {
+      .map((msg: any) => {
+        console.log('[DEBUG] Raw message before transformation:', {
           id: msg.id,
           content: msg.content.slice(0, 50),
           reactions: msg.reactions,
-          parent_id: msg.parent_id
+          parent_id: msg.parent_id,
+          raw_is_bot: msg.is_bot,
+          raw_isBot: msg.isBot
         });
         
         return {
@@ -98,7 +100,8 @@ export const getChannelMessages = async (
             emoji: r.emoji || '',
             createdAt: r.created_at || r.createdAt || new Date().toISOString()
           })) : [],
-          attachments: Array.isArray(msg.attachments) ? msg.attachments : []
+          attachments: Array.isArray(msg.attachments) ? msg.attachments : [],
+          is_bot: (msg as any).is_bot ?? false
         };
       });
 
@@ -269,7 +272,8 @@ export const getReplies = async (messageId: string): Promise<Message[]> => {
       .map(msg => ({
         ...msg,
         created_at: msg.created_at || new Date().toISOString(),
-        is_system: msg.is_system || false
+        is_system: msg.is_system || false,
+        is_bot: (msg as any).is_bot ?? false
       }));
 
     console.log('Validated and transformed replies:', validReplies);

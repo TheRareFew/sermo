@@ -1,4 +1,4 @@
-import { Reaction, RawMessage, UserStatus } from '../../types';
+import { Reaction, RawMessage, UserStatus, StoreMessage } from '../../types';
 import { store } from '../../store';
 import { addMessage, updateMessage, addReaction, removeReaction } from '../../store/messages/messagesSlice';
 import { updateUserStatus } from '../../store/chat/chatSlice';
@@ -324,33 +324,32 @@ export class WebSocketService {
       } else if (isNewMessageMessage(message)) {
         console.log('Handling NEW_MESSAGE:', message);
         const transformedMessage = transformMessage(message.message);
-        if (message.isReply && message.parentId) {
-          transformedMessage.parentId = message.parentId;
+        
+        if (this.store) {
+          this.store.dispatch(addMessage({
+            channelId: message.channelId,
+            message: transformedMessage
+          }));
         }
-        store.dispatch(addMessage({ 
-          channelId: message.channelId, 
-          message: transformedMessage
-        }));
       } else if (isUpdateMessageMessage(message)) {
         console.log('Handling UPDATE_MESSAGE:', message);
-        const baseMessage: RawMessage = {
-          id: message.id,
-          content: message.updates.content || '',
-          channel_id: message.channelId,
-          sender_id: message.updates.sender_id || '',
-          created_at: message.updates.created_at || new Date().toISOString(),
-          updated_at: message.updates.updated_at,
-          parent_id: message.updates.parent_id,
-          reply_count: message.updates.reply_count,
-          reactions: Array.isArray(message.updates.reactions) ? message.updates.reactions : [],
-          attachments: Array.isArray(message.updates.attachments) ? message.updates.attachments : []
-        };
-        const transformedUpdates = transformMessage(baseMessage);
-        store.dispatch(updateMessage({ 
-          channelId: message.channelId,
-          messageId: message.id,
-          message: transformedUpdates
-        }));
+        if (this.store) {
+          // Only update specific fields that we know are safe
+          const safeUpdates: Partial<StoreMessage> = {
+            content: message.updates.content,
+            reactions: message.updates.reactions || [],
+            attachments: message.updates.attachments || [],
+            has_attachments: (message.updates.attachments || []).length > 0,
+            reply_count: message.updates.reply_count || 0,
+            parent_id: message.updates.parent_id ? message.updates.parent_id.toString() : undefined
+          };
+          
+          this.store.dispatch(updateMessage({
+            channelId: message.channelId,
+            messageId: message.id,
+            message: safeUpdates
+          }));
+        }
       } else if (isUserStatusMessage(message)) {
         console.log('Handling USER_STATUS:', message);
         store.dispatch(updateUserStatus({
@@ -358,16 +357,17 @@ export class WebSocketService {
           status: message.status
         }));
       } else if (isBotMessageMessage(message)) {
+        console.log('Handling BOT_MESSAGE:', message);
         const { channelId, message: botMessage } = message;
-        const transformedMessage = transformMessage(botMessage);
+        const transformedMessage = transformMessage({
+          ...botMessage,
+          is_bot: true
+        });
         
         if (this.store) {
           this.store.dispatch(addMessage({
             channelId,
-            message: {
-              ...transformedMessage,
-              isBot: true
-            }
+            message: transformedMessage
           }));
         }
       }

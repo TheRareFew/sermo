@@ -44,7 +44,7 @@ export interface RawMessage {
   reactions: Reaction[];
   attachments: any[];
   user?: User;
-  isBot?: boolean;
+  is_bot?: boolean;
   isTemp?: boolean;
 }
 
@@ -59,6 +59,7 @@ export interface Message {
   parent_id?: string;
   reply_count?: number;
   reactions: Reaction[];
+  is_bot?: boolean;
   attachments: Attachment[];
   has_attachments: boolean;
 }
@@ -67,20 +68,19 @@ export interface Message {
 export interface StoreMessage {
   id: string;
   content: string;
-  channelId: string;
-  userId: string;
+  sender_id: string;
+  channel_id: string;
+  created_at: string;
+  updated_at: string;
+  parent_id?: string;
+  reply_count: number;
   reactions: Reaction[];
-  attachments: Attachment[];
-  createdAt: string;
-  updatedAt: string;
-  parentId?: string;
-  replyCount: number;
+  attachments?: Attachment[];
+  has_attachments?: boolean;
+  is_bot?: boolean;
   isExpanded?: boolean;
   repliesLoaded?: boolean;
   replies?: StoreMessage[];
-  has_attachments: boolean;
-  isBot?: boolean;
-  showReplies?: boolean;
   isTemp?: boolean;
 }
 

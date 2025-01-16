@@ -22,17 +22,17 @@ const RepliesContainer = styled.div`
 const MessageReplies: React.FC<MessageRepliesProps> = ({
   replies,
   currentUserId,
+  users,
   onDelete,
   onReactionAdd,
   onReactionRemove,
-  users,
   onContentLoad
 }) => {
   return (
     <RepliesContainer>
       {[...replies].reverse().map((reply) => {
-        const user = users[reply.userId];
-        const username = user ? user.username : reply.userId;
+        const user = users[reply.sender_id];
+        const username = user ? user.username : reply.sender_id;
         
         return (
           <Message
@@ -40,8 +40,8 @@ const MessageReplies: React.FC<MessageRepliesProps> = ({
             id={reply.id}
             content={reply.content}
             sender={username}
-            timestamp={reply.createdAt}
-            userId={reply.userId}
+            timestamp={reply.created_at}
+            userId={reply.sender_id}
             currentUserId={currentUserId}
             onDelete={() => onDelete(reply.id)}
             replyCount={0}
@@ -54,7 +54,7 @@ const MessageReplies: React.FC<MessageRepliesProps> = ({
             onReactionRemove={(emoji) => onReactionRemove(reply.id, emoji)}
             attachments={reply.attachments}
             has_attachments={reply.has_attachments}
-            isBot={user?.isBot}
+            is_bot={reply.is_bot}
             onContentLoad={onContentLoad}
           />
         );

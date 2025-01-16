@@ -219,7 +219,8 @@ class ConnectionManager:
                     "id": str(sender.id),
                     "username": sender.username,
                     "status": sender.status
-                }
+                },
+                "is_bot": getattr(message, 'is_bot', False)
             }
             
             # If this is a reply, include it in the parent message's replies
