@@ -74,6 +74,7 @@ export const transformMessage = (message: RawMessage | Message): StoreMessage =>
     replies: 'replies' in message && Array.isArray(message.replies) ? message.replies : [],
     reactions,
     attachments: Array.isArray(message.attachments) ? transformAttachments(message.attachments) : [],
-    has_attachments: 'has_attachments' in message ? message.has_attachments : false
+    has_attachments: 'has_attachments' in message ? message.has_attachments : false,
+    isTemp: 'isTemp' in message ? !!message.isTemp : false
   };
 }; 

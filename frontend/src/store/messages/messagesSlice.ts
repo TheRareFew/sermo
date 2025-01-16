@@ -99,17 +99,48 @@ const messagesSlice = createSlice({
 
       // Add the message to the main array only if it's not a reply
       if (!message.parentId) {
-        state.messagesByChannel[channelId].push({
-          ...message,
-          reactions: message.reactions || [],
-          attachments: message.attachments || [],
-          replyCount: message.replyCount || 0,
-          isExpanded: false,
-          repliesLoaded: false,
-          replies: message.replies || []
-        });
+        // If this is a server response for a temporary message, replace the temp message
+        if (!message.isTemp) {
+          const tempIndex = state.messagesByChannel[channelId].findIndex(
+            m => m.isTemp && m.content === message.content
+          );
+          if (tempIndex !== -1) {
+            // Replace the temporary message with the server response
+            state.messagesByChannel[channelId][tempIndex] = {
+              ...message,
+              reactions: message.reactions || [],
+              attachments: message.attachments || [],
+              replyCount: message.replyCount || 0,
+              isExpanded: false,
+              repliesLoaded: false,
+              replies: message.replies || []
+            };
+          } else {
+            // If no temporary message found, add as new message
+            state.messagesByChannel[channelId].push({
+              ...message,
+              reactions: message.reactions || [],
+              attachments: message.attachments || [],
+              replyCount: message.replyCount || 0,
+              isExpanded: false,
+              repliesLoaded: false,
+              replies: message.replies || []
+            });
+          }
+        } else {
+          // Add temporary message
+          state.messagesByChannel[channelId].push({
+            ...message,
+            reactions: message.reactions || [],
+            attachments: message.attachments || [],
+            replyCount: message.replyCount || 0,
+            isExpanded: false,
+            repliesLoaded: false,
+            replies: message.replies || []
+          });
+        }
       }
-      
+
       console.log('Updated messages state:', state.messagesByChannel[channelId]);
     },
     prependMessages: (state, action: PayloadAction<{ channelId: string; messages: StoreMessage[]; replace?: boolean }>) => {

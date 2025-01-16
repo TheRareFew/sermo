@@ -43,11 +43,9 @@ We need to add functionality to summarize or describe uploaded files, store the 
 
 5. **[ ] Upload Descriptions to Pinecone**
 
-    - Initialize the Pinecone client.
+    - Initialize the Pinecone client with 3072-dimension embeddings.
 
-    - After generating the summary/description, upload it to Pinecone.
-
-    - Include relevant metadata (e.g., file ID, filename).
+    - After generating the summary/description, upload it to Pinecone with enhanced metadata.
 
 6. **[ ] Testing**
 
@@ -216,21 +214,21 @@ We need to add functionality to summarize or describe uploaded files, store the 
 
 ### 5. Upload Descriptions to Pinecone
 
-- **Initialize Pinecone client**:
+- **Initialize Pinecone client with 3072-dimension embeddings**:
 
     [CODE START]
     from langchain_community.vectorstores import Pinecone
     from langchain.schema import Document
-    embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")  # 3072 dimensions
     pinecone_client = Pinecone(
         api_key=os.getenv("PINECONE_API_KEY"),
-        index_name=os.getenv("PINECONE_INDEX_TWO"),
+        index_name=os.getenv("PINECONE_INDEX"),  # Use 3072d index for files
         embedding=embeddings,
         namespace="files"
     )
     [CODE END]
 
-- **Upload description to Pinecone**:
+- **Upload description to Pinecone with enhanced metadata**:
 
     [CODE START]
     if description:
@@ -239,11 +237,13 @@ We need to add functionality to summarize or describe uploaded files, store the 
             metadata={
                 'file_id': str(db_file.id),
                 'filename': db_file.filename,
+                'file_type': db_file.file_type,
                 'uploaded_by': current_user.username,
-                'timestamp': str(datetime.utcnow())
+                'message_text': message.content if message else None,
+                'upload_date': str(datetime.utcnow())
             }
         )
-        # Assume we have a function to upload documents to Pinecone
+        # Upload document to Pinecone
         await pinecone_client.add_document(document)
     [CODE END]
 

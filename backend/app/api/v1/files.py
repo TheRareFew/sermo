@@ -15,7 +15,7 @@ from ...models.message import Message
 from ...models.channel import Channel
 from ..deps import get_db, get_current_user
 from ...models.user import User
-from ...ai.file_description import process_file
+from ...ai.file_handler import process_file
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -199,6 +199,7 @@ async def upload_file(
             
             # Generate file description if applicable
             if file.content_type.startswith(('text/', 'image/')) or file.content_type == 'application/pdf':
+                logger.info(f"Starting file description generation for {filename}")
                 try:
                     description = await process_file(
                         file_path=file_path,
@@ -206,14 +207,19 @@ async def upload_file(
                         file_id=db_file.id,
                         filename=filename,
                         uploaded_by=current_user.username,
-                        pinecone_index=os.getenv("PINECONE_INDEX_TWO", ""),
+                        message=None,
                         created_at=db_file.created_at
                     )
                     if description:
-                        db_file.description = description
+                        logger.info(f"Successfully generated description for {filename}")
+                        db_file.description = description[0] if isinstance(description, tuple) else description
+                    else:
+                        logger.warning(f"No description generated for {filename}")
                 except Exception as e:
-                    logger.error(f"Error generating file description: {str(e)}")
+                    logger.error(f"Error generating file description for {filename}: {str(e)}", exc_info=True)
                     # Continue without description if there's an error
+            else:
+                logger.info(f"Skipping file description generation for unsupported type: {file.content_type}")
             
             # Update message has_attachments if message_id is provided
             if message_id:

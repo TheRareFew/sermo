@@ -183,6 +183,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastAttemptRef = useRef<{ file?: File; message: string } | null>(null);
   const authToken = useSelector((state: RootState) => state.auth.token);
+  const currentUser = useSelector((state: RootState) => state.auth.user);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -210,7 +211,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
   };
 
   const handleKeyPress = async (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && (message.trim() || attachedFile) && channelId) {
+    if (e.key === 'Enter' && (message.trim() || attachedFile) && channelId && currentUser) {
       setError(null);
       setIsLoading(true);
       setUploadProgress(0);
@@ -259,17 +260,45 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
                     code: error.code
                   });
               }
+              setIsLoading(false); // Enable input if file upload fails
               return; // Don't send message if file upload fails
             } else {
               setError({ 
                 message: 'Failed to upload file. Please try again.'
               });
+              setIsLoading(false); // Enable input if file upload fails
               return; // Don't send message if file upload fails
             }
           }
         }
 
-        // Send the user's message with the file ID if upload was successful
+        // Create a temporary message to show immediately
+        const tempMessage = {
+          id: `temp-${Date.now()}`,
+          content: message.trim(),
+          channel_id: channelId,
+          sender_id: currentUser.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          reactions: [],
+          attachments: [],
+          isTemp: true, // Mark as temporary
+          user: currentUser // Include the user object
+        };
+
+        // Dispatch temporary message to store
+        dispatch(addMessage({
+          channelId,
+          message: transformMessage(tempMessage)
+        }));
+
+        // Clear input immediately after showing temp message
+        setMessage('');
+        setAttachedFile(null);
+        setMessageSent(true);
+        setIsLoading(false); // Enable input immediately after clearing it
+
+        // Send the message to the server
         const messageResponse = await sendMessage({
           channelId,
           content: message.trim(),
@@ -279,16 +308,12 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
         // Store the numeric message ID before transforming
         const messageId = parseInt(messageResponse.id.toString(), 10);
 
+        // Update the message in store with server response
         const transformedMessage = transformMessage(messageResponse);
         dispatch(addMessage({
           channelId,
           message: transformedMessage
         }));
-
-        // Clear message and reset states immediately after user's message is sent
-        setMessage('');
-        setAttachedFile(null);
-        setMessageSent(true);
 
         // If message mentions @lain, send to AI endpoint after user's message is sent
         if (isLainMention && channelId) {
@@ -296,7 +321,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
             await sendAiMessage({
               message: message.trim(),
               channel_id: parseInt(channelId, 10),
-              parent_message_id: messageId  // Now messageId is a number
+              parent_message_id: messageId
             });
             
             // The bot's response will come through the WebSocket
@@ -324,8 +349,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
           message: 'Failed to send message. Please try again.',
           isWarning: true
         });
-      } finally {
-        setIsLoading(false);
+        setIsLoading(false); // Keep this for error cases
       }
     }
   };

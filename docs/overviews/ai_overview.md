@@ -26,13 +26,93 @@ The project incorporates advanced AI features to provide an intelligent chatbot 
 
 ## Architecture
 
-The AI features are built upon a **Retrieval-Augmented Generation (RAG)** architecture, utilizing gpt-4o-mini for response generation and Pinecone for vector storage of message embeddings. The system combines two types of context:
-1. Historical context from previous conversations between Lain and the user
-2. Relevant messages from across all channels retrieved via vector similarity search
+The AI features are built upon a **Retrieval-Augmented Generation (RAG)** architecture, utilizing gpt-4o-mini for response generation and two separate Pinecone indexes for vector storage:
 
-This dual-context approach allows Lain to maintain consistency in conversations while also drawing upon broader knowledge from the chat history.
+1. **PINECONE_INDEX** (3072 dimensions): Used for storing file descriptions and metadata
+2. **PINECONE_INDEX_TWO** (1536 dimensions): Used for storing message embeddings
+
+The system combines three types of context:
+1. Historical context from previous conversations between Lain and the user
+2. Relevant messages from across all channels retrieved via vector similarity search (1536d embeddings)
+3. Relevant file descriptions and metadata retrieved via vector similarity search (3072d embeddings)
+
+This multi-context approach allows Lain to maintain conversation consistency while drawing upon both message history and file knowledge.
 
 ## AI Components
+
+### Message and File Retrieval System
+
+The system uses two different embedding models and Pinecone indexes for optimal performance:
+
+1. **Message Embeddings**
+   - Model: text-embedding-ada-002 (1536 dimensions)
+   - Index: PINECONE_INDEX_TWO
+   - Used for: Chat messages and conversation history
+
+2. **File Embeddings**
+   - Model: text-embedding-3-large (3072 dimensions)
+   - Index: PINECONE_INDEX
+   - Used for: File descriptions, summaries, and metadata
+   - Additional metadata stored:
+     - File type
+     - Associated message content (if uploaded with a message)
+     - Upload information (user, timestamp)
+
+### File Processing and Embedding
+
+The file processing system (`backend/app/ai/file_handler.py`) handles various file types and generates embeddings for vector search:
+
+**Key Functions:**
+
+- **`process_file()`**: Main function that processes different file types
+  - Handles text files, PDFs, and images
+  - For PDFs and text files:
+    - Splits content into chunks using RecursiveCharacterTextSplitter
+    - Generates summaries for each chunk
+    - Stores both raw chunks and summaries in 3072d index
+  - For images:
+    - Generates a single description
+    - Stores in 3072d index
+
+- **`upload_to_pinecone_with_model()`**: Uploads documents to Pinecone
+  - Uses text-embedding-3-large model for 3072d embeddings
+  - Includes comprehensive metadata:
+    - File ID and name
+    - File type
+    - Upload information
+    - Associated message content (if any)
+    - Content type (raw_chunk/description/image_description)
+    - Chunk information (index, total chunks) for PDF/text files
+
+**Example Metadata Format for PDF Chunks:**
+```json
+{
+    "file_id": "123",
+    "filename": "document.pdf",
+    "uploaded_by": "user123",
+    "file_type": "application/pdf",
+    "message_text": "Here's the documentation we discussed",
+    "upload_date": "2024-01-15T10:30:00Z",
+    "chunk_index": 0,
+    "total_chunks": 5,
+    "content_type": "raw_chunk"
+}
+```
+
+**Example Metadata Format for Descriptions:**
+```json
+{
+    "file_id": "123",
+    "filename": "document.pdf",
+    "uploaded_by": "user123",
+    "file_type": "application/pdf",
+    "message_text": "Here's the documentation we discussed",
+    "upload_date": "2024-01-15T10:30:00Z",
+    "chunk_index": 0,
+    "total_chunks": 5,
+    "content_type": "description"
+}
+```
 
 ### Message Retrieval and Embedding
 

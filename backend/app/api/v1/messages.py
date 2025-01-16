@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 import logging
 from datetime import datetime
+import asyncio
 
 from ...schemas.message import Message, MessageCreate, MessageUpdate, MessageReply
 from ...models.message import Message as MessageModel
@@ -12,6 +13,7 @@ from ...models.file import File as FileModel
 from ..deps import get_db, get_current_user
 from ...models.user import User
 from .websockets import manager
+from ...ai.message_indexer import index_message
 
 router = APIRouter()
 channel_router = APIRouter()
@@ -142,11 +144,15 @@ async def create_message(
         # Refresh to load relationships
         db_message = db.query(MessageModel).options(
             joinedload(MessageModel.sender),
-            joinedload(MessageModel.files)
+            joinedload(MessageModel.files),
+            joinedload(MessageModel.channel)
         ).filter(MessageModel.id == db_message.id).first()
 
         # Broadcast the new message via WebSocket
         await manager.broadcast_message(channel_id, db_message, exclude_user_id=current_user.id)
+
+        # Index the message in Pinecone (non-blocking)
+        asyncio.create_task(index_message(db_message))
 
         return db_message
 
@@ -319,8 +325,12 @@ async def create_message_reply(
         # Refresh to load relationships
         db_reply = db.query(MessageModel).options(
             joinedload(MessageModel.sender),
-            joinedload(MessageModel.files)
+            joinedload(MessageModel.files),
+            joinedload(MessageModel.channel)
         ).filter(MessageModel.id == db_reply.id).first()
+
+        # Index the reply in Pinecone (non-blocking)
+        asyncio.create_task(index_message(db_reply))
 
         # Broadcast the new reply via WebSocket
         await manager.broadcast_message(parent_message.channel_id, db_reply, exclude_user_id=current_user.id)

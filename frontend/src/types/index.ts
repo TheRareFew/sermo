@@ -45,6 +45,7 @@ export interface RawMessage {
   attachments: any[];
   user?: User;
   isBot?: boolean;
+  isTemp?: boolean;
 }
 
 export interface Message {
@@ -80,6 +81,7 @@ export interface StoreMessage {
   has_attachments: boolean;
   isBot?: boolean;
   showReplies?: boolean;
+  isTemp?: boolean;
 }
 
 // Attachment type
