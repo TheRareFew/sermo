@@ -11,6 +11,7 @@ from ...schemas.user import (
 )
 from ...models.user import User as UserModel
 from ..deps import get_db, get_current_user
+from ...ai.profile_generator import generate_user_profile
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -204,3 +205,28 @@ async def save_profile_picture(file: UploadFile, user_id: int) -> str:
     except Exception as e:
         logger.error(f"Error saving profile picture: {e}")
         raise HTTPException(status_code=500, detail="Could not save profile picture") 
+
+@router.post("/{user_id}/generate-profile", response_model=User)
+async def generate_profile(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """Generate a profile description for a user based on their message history"""
+    try:
+        # Check if user exists
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Generate profile
+        description = await generate_user_profile(db, user_id)
+        
+        return user
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in generate_profile: {e}")
+        raise HTTPException(status_code=500, detail="Could not generate profile") 

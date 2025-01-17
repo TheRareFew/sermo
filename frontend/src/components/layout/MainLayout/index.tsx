@@ -23,7 +23,7 @@ import Button from '../../common/Button';
 import UserListItem from '../../chat/UserListItem';
 import ChannelListItem from '../../chat/ChannelListItem';
 import CreateChannelModal from '../../chat/CreateChannelModal';
-import MessageInput from '../../chat/MessageInput';
+import { MessageInput } from '../../chat/MessageInput';
 import MessageList from '../../chat/MessageList';
 import SearchBar from '../../common/SearchBar';
 import SearchResults from '../../common/SearchResults';
@@ -213,14 +213,16 @@ const MainLayout: React.FC = () => {
   }, [dispatch]);
 
   // Memoize selectors
-  const { channels, activeChannelId, users } = useSelector((state: RootState) => ({
+  const { channels, activeChannelId, users, currentUser } = useSelector((state: RootState) => ({
     channels: state.chat.channels,
     activeChannelId: state.chat.activeChannelId,
-    users: state.chat.users as { [key: string]: User }
+    users: state.chat.users as { [key: string]: User },
+    currentUser: state.auth.user
   }), (prev, next) => {
     return prev.channels === next.channels &&
            prev.activeChannelId === next.activeChannelId &&
-           prev.users === next.users;
+           prev.users === next.users &&
+           prev.currentUser === next.currentUser;
   });
 
   const activeChannel = useMemo(() => 
@@ -592,7 +594,9 @@ const MainLayout: React.FC = () => {
           targetMessageId={selectedMessageId}
         />
         <ChatInput>
-          <MessageInput channelId={activeChannelId} />
+          {activeChannelId && currentUser && (
+            <MessageInput channelId={activeChannelId} currentUser={currentUser} />
+          )}
         </ChatInput>
       </ChatArea>
 

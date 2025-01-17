@@ -33,6 +33,18 @@ interface SendMessageParams {
   fileId?: number;
 }
 
+interface AiMessageRequest {
+  message: string;
+  channel_id: number;
+  parent_message_id: number;
+  target_user: string;
+}
+
+interface AiMessageResponse {
+  response: string;
+  message_id: string;
+}
+
 export const getChannels = async (): Promise<Channel[]> => {
   console.log('Fetching channels...');
   try {
@@ -343,6 +355,19 @@ export const getMessagePosition = async (channelId: string, messageId: string): 
     return position;
   } catch (error) {
     console.error(`Error getting message position:`, error);
+    throw error;
+  }
+};
+
+export const sendAiMessage = async (request: AiMessageRequest): Promise<AiMessageResponse> => {
+  try {
+    const response = await apiRequest<AiMessageResponse>('/ai/message', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+    return response;
+  } catch (error) {
+    console.error('Error sending AI message:', error);
     throw error;
   }
 }; 

@@ -25,6 +25,7 @@ def create_test_data(db: SessionLocal):
                 username=f"test_{i:02d}",
                 email=f"test_{i:02d}@test.com",
                 full_name=f"Test User {i:02d}",
+                description=f"This is test user {i:02d}'s description",
                 hashed_password=get_password_hash("1234"),
                 status="online"
             )

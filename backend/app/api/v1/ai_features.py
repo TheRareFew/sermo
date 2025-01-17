@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional, Tuple
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
-from langchain.prompts.prompt import PromptTemplate
 from langchain_pinecone import PineconeVectorStore
 from langchain_community.embeddings import OpenAIEmbeddings
 from ..deps import get_current_user, get_db
@@ -21,7 +20,13 @@ import asyncio
 from sqlalchemy.orm import joinedload
 from ...ai.message_indexer import index_message
 from ...models.reaction import Reaction as ReactionModel
-from sqlalchemy import alias
+from ...ai.context_generator import (
+    generate_lain_context,
+    generate_user_bot_context,
+    get_bot_scored_messages,
+    generate_bot_prompt
+)
+from ...ai.profile_generator import check_and_update_profile
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -43,9 +48,10 @@ if missing_vars:
 
 # Define request and response models
 class MessageRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    channel_id: int = Field(..., gt=0)
-    parent_message_id: int = Field(..., gt=0)  # ID of the message being replied to
+    message: str
+    channel_id: int
+    parent_message_id: Optional[int] = None
+    target_user: Optional[str] = None
 
 class MessageResponse(BaseModel):
     response: str
@@ -80,66 +86,6 @@ class BotScoredMessages(BaseModel):
     lowest_scored: Optional[ScoredMessage]
     bot_username: str
 
-async def get_bot_scored_messages(db: Session, bot_user_id: int) -> Tuple[Optional[dict], Optional[dict]]:
-    """
-    Get the highest and lowest scored messages for a bot user.
-    Returns a tuple of (highest_scored_message, lowest_scored_message).
-    Each message is a dict containing the message content, parent message content, score, and metadata.
-    Returns None for either message if no scores exist.
-    """
-    try:
-        # Create aliases for the Message table
-        ParentMessage = alias(Message)
-
-        # Get highest scored message
-        highest_score = (
-            db.query(BotMessageScore, Message, ParentMessage.c.content.label('parent_content'))
-            .join(Message, BotMessageScore.message_id == Message.id)
-            .outerjoin(ParentMessage, Message.parent_id == ParentMessage.c.id)
-            .filter(BotMessageScore.bot_user_id == bot_user_id)
-            .order_by(BotMessageScore.score.desc())
-            .first()
-        )
-
-        # Get lowest scored message
-        lowest_score = (
-            db.query(BotMessageScore, Message, ParentMessage.c.content.label('parent_content'))
-            .join(Message, BotMessageScore.message_id == Message.id)
-            .outerjoin(ParentMessage, Message.parent_id == ParentMessage.c.id)
-            .filter(BotMessageScore.bot_user_id == bot_user_id)
-            .order_by(BotMessageScore.score.asc())
-            .first()
-        )
-
-        # Format results
-        highest_message = None
-        if highest_score:
-            score, message, parent_content = highest_score
-            highest_message = {
-                'message_id': message.id,
-                'message': message.content,
-                'parent_message': parent_content,
-                'score': score.score,
-                'created_at': message.created_at
-            }
-
-        lowest_message = None
-        if lowest_score and (not highest_score or lowest_score[0].id != highest_score[0].id):
-            score, message, parent_content = lowest_score
-            lowest_message = {
-                'message_id': message.id,
-                'message': message.content,
-                'parent_message': parent_content,
-                'score': score.score,
-                'created_at': message.created_at
-            }
-
-        return highest_message, lowest_message
-
-    except Exception as e:
-        logger.error(f"Error getting bot scored messages: {e}")
-        return None, None
-
 @router.post("/message", response_model=MessageResponse)
 async def send_message_to_bot(
     request: MessageRequest,
@@ -148,6 +94,48 @@ async def send_message_to_bot(
 ):
     logger.info(f"Received message: {request.message} for channel: {request.channel_id}")
     
+    # If target_user is specified, create or get bot user for that user
+    bot_user = None
+    if request.target_user:
+        target_username = request.target_user
+        bot_username = f"{target_username}<bot>"
+        
+        # Try to find existing bot for this user
+        bot_user = db.query(User).filter(User.username == bot_username).first()
+        if not bot_user:
+            # Create new bot user
+            bot_user = User(
+                username=bot_username,
+                email=f"{target_username}.bot@sermo.ai",
+                status="online",
+                is_bot=True,
+                full_name=f"{target_username}'s Bot",
+                hashed_password=None
+            )
+            db.add(bot_user)
+            db.commit()
+            db.refresh(bot_user)
+            
+        # Find target user and generate/update their profile if needed
+        target_user = db.query(User).filter(User.username == target_username).first()
+        if target_user:
+            await check_and_update_profile(db, target_user.id)
+    else:
+        # Use default Lain bot
+        bot_user = db.query(User).filter(User.username == "lain").first()
+        if not bot_user:
+            bot_user = User(
+                username="lain",
+                email="lain@sermo.ai",
+                status="online",
+                is_bot=True,
+                full_name="Lain Iwakura",
+                hashed_password=None
+            )
+            db.add(bot_user)
+            db.commit()
+            db.refresh(bot_user)
+
     # Initialize embeddings for different dimensions
     embeddings_1536 = OpenAIEmbeddings(model="text-embedding-ada-002")  # 1536 dimensions
     embeddings_3072 = OpenAIEmbeddings(model="text-embedding-3-large")  # 3072 dimensions
@@ -211,131 +199,18 @@ async def send_message_to_bot(
         key=lambda x: x.metadata.get('timestamp', ''),
         reverse=True
     )[:5]  # Keep only the 5 most recent unique messages
-    
-    # Format message context with clearer temporal information
-    message_context = "=== RECENT USER MESSAGES ===\n(Showing newest first)\n\n" + "\n\n".join([
-        f"[{doc.metadata.get('timestamp')}]\n"
-        f"User: {doc.metadata.get('sender')}\n"
-        f"Channel: {doc.metadata.get('channel')}\n"
-        f"Message: {doc.page_content}"
-        for doc in message_docs_sorted
-    ])
 
-    # Format file chunks context with clear separation
-    file_chunks_context = "=== RELEVANT FILE CONTENT ===\n\n" + "\n\n".join([
-        f"[File Chunk {doc.metadata.get('chunk_index')} of {doc.metadata.get('total_chunks')}]\n"
-        f"From: {doc.metadata.get('filename')}\n"
-        f"Type: {doc.metadata.get('file_type')}\n"
-        f"Uploaded by: {doc.metadata.get('uploaded_by')} on {doc.metadata.get('upload_date')}\n"
-        f"Content:\n{doc.page_content}"
-        for doc in file_chunks
-    ])
-
-    # Format file descriptions context with clear separation
-    file_descriptions_context = "=== FILE SUMMARIES ===\n\n" + "\n\n".join([
-        f"[File: {doc.metadata.get('filename')}]\n"
-        f"Type: {doc.metadata.get('file_type')}\n"
-        f"Uploaded by: {doc.metadata.get('uploaded_by')} on {doc.metadata.get('upload_date')}\n"
-        f"Summary:\n{doc.page_content}"
-        for doc in file_descriptions
-    ])
-
-    logger.info(f"Message context length: {len(message_context)}")
-    logger.info(f"File chunks context length: {len(file_chunks_context)}")
-    logger.info(f"File descriptions context length: {len(file_descriptions_context)}")
-
-    # Combine contexts with clear separations
-    combined_context = ""
-    
-    # Add message context first
-    if message_context.strip() != "=== RECENT USER MESSAGES ===\n(Showing newest first)":
-        combined_context += message_context + "\n\n"
-    
-    # Add Lain's previous interactions
-    lain_user = db.query(User).filter(User.is_bot == True).first()
-    if lain_user:
-        lain_messages = db.query(Message).filter(
-            Message.sender_id == lain_user.id,
-            Message.parent_id.in_(
-                db.query(Message.id).filter(Message.sender_id == current_user.id)
-            )
-        ).order_by(Message.created_at.desc()).limit(2).all()
-        
-        if lain_messages:
-            # Add Lain's previous messages to context with timestamps
-            lain_context = "=== RECENT INTERACTIONS WITH LAIN ===\n\n" + "\n\n".join([
-                f"[{msg.created_at.isoformat()}]\n"
-                f"You: {msg.parent.content}\n"
-                f"Lain: {msg.content}"
-                for msg in reversed(lain_messages)
-                if msg.parent is not None and msg.parent.content != request.message  # Exclude current question
-            ])
-            if lain_context.strip() != "=== RECENT INTERACTIONS WITH LAIN ===":  # Only add if there are actual interactions
-                combined_context += lain_context + "\n\n"
-    
-    # Add file information
-    if file_descriptions_context.strip() != "=== FILE SUMMARIES ===":
-        combined_context += file_descriptions_context + "\n\n"
-    if file_chunks_context.strip() != "=== RELEVANT FILE CONTENT ===":
-        combined_context += file_chunks_context
-
-    logger.info(f"Total combined context length: {len(combined_context)}")
-
-    # Get bot's highest and lowest scored messages
-    bot_user = db.query(User).filter(User.username == "lain").first()
-    if bot_user:
-        highest_message, lowest_message = await get_bot_scored_messages(db, bot_user.id)
-        if highest_message or lowest_message:
-            scored_messages_context = "=== BOT'S SCORED MESSAGES ===\n\n"
-            
-            if highest_message:
-                scored_messages_context += f"HIGHEST SCORED MESSAGE (Score: {highest_message['score']}):\n"
-                if highest_message['parent_message']:
-                    scored_messages_context += f"User: {highest_message['parent_message']}\n"
-                scored_messages_context += f"Bot: {highest_message['message']}\n\n"
-            
-            if lowest_message:
-                scored_messages_context += f"LOWEST SCORED MESSAGE (Score: {lowest_message['score']}):\n"
-                if lowest_message['parent_message']:
-                    scored_messages_context += f"User: {lowest_message['parent_message']}\n"
-                scored_messages_context += f"Bot: {lowest_message['message']}\n"
-            
-            # Add scored messages context to combined context
-            combined_context = scored_messages_context + "\n" + combined_context
-
-    # Create prompt with combined context
-    template = PromptTemplate(
-        template="""You are Lain Iwakura, a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Use the provided context to answer the user's question. Be nonchalant. Don't be over enthusiastic. Don't act like you care. Don't go out of your way to be nice. Only use information from the context provided. If you can't find relevant information in the context, say so.
-
-Previous conversations with {username} and other relevant context:
-{context}
-
-{username}'s Question: {query}
-
-When analyzing the context:
-1. Messages are shown with timestamps in [brackets]
-2. Messages are ordered newest first
-3. Look at the content of conversations, not just individual messages
-4. Pay attention to topics discussed in both messages and files
-5. When summarizing conversations, focus on the actual topics discussed
-6. Pay special attention to the "BOT'S SCORED MESSAGES" section:
-   - Messages with high scores represent responses that users found helpful and appropriate
-   - Messages with low scores represent responses that users found unhelpful or inappropriate
-   - Try to emulate the style and approach of highly scored messages
-   - Avoid the characteristics of low scored messages
-   - Consider both the content and tone of scored messages
-
-Remember to reference specific details from the context in your response. If you see relevant files or messages, mention them directly. If you're using information from a specific file or message, indicate where that information came from.
-
-Answer as Lain Iwakura, maintaining consistency with any previous conversations shown in the context. If no relevant information is found, say so, but still be conversational about it. Please don't start your response with 'Lain:'""",
-        input_variables=["query", "context", "username"]
+    # Generate prompt with context
+    prompt_with_context = await generate_bot_prompt(
+        db=db,
+        current_user=current_user,
+        request_message=request.message,
+        target_user=request.target_user,
+        message_docs_sorted=message_docs_sorted,
+        file_chunks=file_chunks,
+        file_descriptions=file_descriptions
     )
-    prompt_with_context = template.invoke({
-        "query": request.message, 
-        "context": combined_context,
-        "username": current_user.username
-    })
-    logger.info(f"Final prompt length: {len(prompt_with_context.to_string())}")
+    logger.info(f"Final prompt length: {len(prompt_with_context)}")
     logger.info(f"Generated prompt with context: {prompt_with_context}")
 
     # Query the LLM with more explicit instructions about temperature
@@ -350,28 +225,13 @@ Answer as Lain Iwakura, maintaining consistency with any previous conversations 
     logger.info(f"LLM response: {results.content}")
 
     # Create bot message in database
-    bot_user = db.query(User).filter(User.username == "lain").first()
-    if not bot_user:
-        # Create bot user if it doesn't exist
-        bot_user = User(
-            username="lain",
-            email="lain@sermo.ai",
-            status="online",
-            is_bot=True,
-            full_name="Lain Iwakura",
-            hashed_password=None  # Bot doesn't need a password
-        )
-        db.add(bot_user)
-        db.commit()
-        db.refresh(bot_user)
-
     bot_message = Message(
         content=results.content,
         channel_id=request.channel_id,
         sender_id=bot_user.id,
         created_at=datetime.now(UTC),
         is_bot=True,
-        parent_id=request.parent_message_id  # Set the parent message ID
+        parent_id=request.parent_message_id
     )
     db.add(bot_message)
     db.commit()

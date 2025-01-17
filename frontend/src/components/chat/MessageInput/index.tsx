@@ -1,19 +1,16 @@
 import React, { useState, KeyboardEvent, useRef, useLayoutEffect, useEffect, ChangeEvent } from 'react';
 import styled from 'styled-components';
-import { useDispatch } from 'react-redux';
-import { addMessage } from '../../../store/messages/messagesSlice';
-import { sendMessage } from '../../../services/api/chat';
-import { uploadFile, updateFileMessage, FileUploadError } from '../../../services/api/files';
-import { transformMessage } from '../../../utils/messageTransform';
-import { AppDispatch } from '../../../store';
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState } from '../../../store';
+import { sendMessage, sendAiMessage } from '../../../services/api/chat';
+import { uploadFile, FileUploadError } from '../../../services/api/files';
+import { User } from '../../../types';
 import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
-import { useSelector } from 'react-redux';
-import { RootState } from '../../../store';
-import { sendAiMessage } from '../../../services/api/ai';
 
 interface MessageInputProps {
-  channelId: string | null;
+  channelId: string;
+  currentUser: User;
 }
 
 const InputContainer = styled.div`
@@ -169,8 +166,8 @@ interface ErrorState {
   isWarning?: boolean;
 }
 
-const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element => {
-  const dispatch = useDispatch<AppDispatch>();
+export const MessageInput: React.FC<MessageInputProps> = ({ channelId, currentUser }): JSX.Element => {
+  const dispatch = useDispatch();
   const [message, setMessage] = useState('');
   const [error, setError] = useState<ErrorState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -182,9 +179,11 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastAttemptRef = useRef<{ file?: File; message: string } | null>(null);
-  const authToken = useSelector((state: RootState) => state.auth.token);
-  const currentUser = useSelector((state: RootState) => state.auth.user);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Get all users from the store
+  const users = useSelector((state: RootState) => state.chat.users || {});
+  const usersList = Object.values(users) as User[];
 
   useLayoutEffect(() => {
     if (channelId && inputRef.current) {
@@ -206,8 +205,27 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newMessage = e.target.value;
     setMessage(newMessage);
-    // Check for @lain mention
-    setIsLainMention(/@lain\b/.test(newMessage));
+    
+    // Check for @mentions
+    const mentionMatch = newMessage.match(/@(\w+)\b/);
+    if (mentionMatch) {
+      const mentionedUsername = mentionMatch[1];
+      const mentionedUser = usersList.find((u) => u.username === mentionedUsername);
+      
+      if (mentionedUser) {
+        if (mentionedUser.isBot) {
+          setIsLainMention(true);
+        } else if (mentionedUser.status === 'offline') {
+          // Create bot name with <bot> suffix
+          const botUsername = `${mentionedUsername}<bot>`;
+          setIsLainMention(true);
+        } else {
+          setIsLainMention(false);
+        }
+      }
+    } else {
+      setIsLainMention(false);
+    }
   };
 
   const handleKeyPress = async (e: KeyboardEvent<HTMLInputElement>) => {
@@ -286,33 +304,39 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
           fileId
         });
 
-        // If message mentions @lain, send to AI endpoint
-        if (isLainMention && channelId) {
-          try {
-            await sendAiMessage({
-              message: messageContent,
-              channel_id: parseInt(channelId, 10),
-              parent_message_id: parseInt(messageResponse.id.toString(), 10)
-            });
-            
-            // The bot's response will come through the WebSocket
-            console.log('AI message sent successfully');
-            setIsLainMention(false);
+        // Check for @mentions of offline users or bots
+        const mentionMatch = messageContent.match(/@(\w+)\b/);
+        if (mentionMatch) {
+          const mentionedUsername = mentionMatch[1];
+          const mentionedUser = usersList.find((u) => u.username === mentionedUsername);
 
-          } catch (error: unknown) {
-            console.error('AI response error:', error);
-            let errorMessage = 'Failed to get AI response. Please try again.';
-            
-            if (error instanceof Error) {
-              errorMessage = error.message;
-            } else if (typeof error === 'object' && error !== null && 'message' in error) {
-              errorMessage = String((error as { message: unknown }).message);
+          if (mentionedUser && (mentionedUser.isBot || mentionedUser.status === 'offline')) {
+            try {
+              await sendAiMessage({
+                message: messageContent,
+                channel_id: parseInt(channelId, 10),
+                parent_message_id: parseInt(messageResponse.id.toString(), 10),
+                target_user: mentionedUser.username
+              });
+              
+              console.log('AI message sent successfully');
+              setIsLainMention(false);
+
+            } catch (error: unknown) {
+              console.error('AI response error:', error);
+              let errorMessage = 'Failed to get AI response. Please try again.';
+              
+              if (error instanceof Error) {
+                errorMessage = error.message;
+              } else if (typeof error === 'object' && error !== null && 'message' in error) {
+                errorMessage = String((error as { message: unknown }).message);
+              }
+              
+              setError({ 
+                message: errorMessage,
+                isWarning: true
+              });
             }
-            
-            setError({ 
-              message: errorMessage,
-              isWarning: true
-            });
           }
         }
       } catch (error) {
@@ -442,14 +466,14 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
     <InputContainer>
       <EmojiButton 
         onClick={toggleEmojiPicker}
-        disabled={isLoading || !channelId}
+        disabled={isLoading}
         title="Add emoji"
       >
         :-)
       </EmojiButton>
       <AttachButton
         onClick={handleAttachClick}
-        disabled={isLoading || !channelId}
+        disabled={isLoading}
         title="Attach file"
       >
         📎
@@ -477,8 +501,8 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
           value={message}
           onChange={handleChange}
           onKeyPress={handleKeyPress}
-          placeholder={channelId ? "Type a message..." : "Select a channel to start chatting..."}
-          disabled={isLoading || !channelId}
+          placeholder="Type a message..."
+          disabled={isLoading}
         />
         {showEmojiPicker && (
           <EmojiPickerWrapper>
@@ -523,4 +547,5 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
   );
 };
 
+// Export both named and default export
 export default MessageInput; 

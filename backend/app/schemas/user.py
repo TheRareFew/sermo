@@ -7,6 +7,7 @@ class UserBase(BaseModel):
     email: EmailStr
     full_name: str
     is_active: bool = True
+    description: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
@@ -16,6 +17,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     password: Optional[str] = None
+    description: Optional[str] = None
 
 class UserStatus(BaseModel):
     status: str  # online, offline, away, busy
