@@ -1,4 +1,4 @@
-import { Reaction, RawMessage, UserStatus, StoreMessage } from '../../types';
+import { Reaction, RawMessage, UserStatus, StoreMessage, RootState } from '../../types';
 import { store } from '../../store';
 import { addMessage, updateMessage, addReaction, removeReaction } from '../../store/messages/messagesSlice';
 import { updateUserStatus } from '../../store/chat/chatSlice';
@@ -326,10 +326,19 @@ export class WebSocketService {
         const transformedMessage = transformMessage(message.message);
         
         if (this.store) {
-          this.store.dispatch(addMessage({
-            channelId: message.channelId,
-            message: transformedMessage
-          }));
+          // Only add as a main message if it's not a reply
+          if (!transformedMessage.parent_id) {
+            this.store.dispatch(addMessage({
+              channelId: message.channelId,
+              message: transformedMessage
+            }));
+          } else {
+            // For replies, only dispatch addMessage which will handle adding it to parent's replies
+            this.store.dispatch(addMessage({
+              channelId: message.channelId,
+              message: transformedMessage
+            }));
+          }
         }
       } else if (isUpdateMessageMessage(message)) {
         console.log('Handling UPDATE_MESSAGE:', message);

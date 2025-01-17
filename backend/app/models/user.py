@@ -25,4 +25,5 @@ class User(Base):
     created_channels = relationship("Channel", back_populates="created_by")
     files = relationship("File", back_populates="uploaded_by")
     reactions = relationship("Reaction", back_populates="user")
-    presence = relationship("Presence", back_populates="user", uselist=False) 
+    presence = relationship("Presence", back_populates="user", uselist=False)
+    bot_scores = relationship("BotMessageScore", back_populates="bot_user") 

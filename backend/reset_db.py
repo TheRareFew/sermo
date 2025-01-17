@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from pinecone import Pinecone
 import logging
 from app.models.user import User
-from app.models.channel import Channel
+from app.models.channel import Channel, channel_members
 from app.auth.security import get_password_hash
 
 # Set up logging
@@ -114,7 +114,7 @@ def reset_pinecone():
         logger.error(f"Error resetting Pinecone indexes: {str(e)}")
         raise
 
-def reset_database(create_test_data: bool = False):
+def reset_database(with_test_data: bool = False):
     """Reset the database by dropping all tables and recreating them"""
     print("Starting database reset...")
     
@@ -150,17 +150,40 @@ def reset_database(create_test_data: bool = False):
     
     # Import all models to ensure they are registered
     from app.models.user import User
-    from app.models.channel import Channel
+    from app.models.channel import Channel, channel_members
     from app.models.message import Message
     from app.models.file import File
     from app.models.presence import Presence
     from app.models.reaction import Reaction
+    from app.models.bot_message_score import BotMessageScore
     from app.auth.security import RefreshToken
     
-    Base.metadata.create_all(new_engine)
+    # Create MetaData instance
+    metadata = Base.metadata
+    
+    # Create tables in order based on dependencies
+    tables_in_order = [
+        User.__table__,
+        channel_members,
+        Channel.__table__,
+        Message.__table__,
+        File.__table__,
+        Presence.__table__,
+        Reaction.__table__,
+        BotMessageScore.__table__,
+        RefreshToken.__table__
+    ]
+    
+    # Add tables to metadata if not already present
+    for table in tables_in_order:
+        if table.name not in metadata.tables:
+            metadata._add_table(table.name, table.schema, table)
+    
+    # Create all tables at once to handle dependencies correctly
+    metadata.create_all(bind=new_engine)
     
     # Initialize with test data if requested
-    if create_test_data:
+    if with_test_data:
         print("Adding test data...")
         db = SessionLocal()
         try:
@@ -172,5 +195,5 @@ def reset_database(create_test_data: bool = False):
 
 if __name__ == "__main__":
     # Check if --with-test-data flag is provided
-    create_test_data_flag = "--with-test-data" in sys.argv
-    reset_database(create_test_data_flag) 
+    with_test_data_flag = "--with-test-data" in sys.argv
+    reset_database(with_test_data_flag) 

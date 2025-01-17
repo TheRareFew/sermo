@@ -30,7 +30,7 @@ const MessageReplies: React.FC<MessageRepliesProps> = ({
 }) => {
   return (
     <RepliesContainer>
-      {[...replies].reverse().map((reply) => {
+      {replies.map((reply) => {
         const user = users[reply.sender_id];
         const username = user ? user.username : reply.sender_id;
         

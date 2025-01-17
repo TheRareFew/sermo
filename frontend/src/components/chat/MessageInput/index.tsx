@@ -260,68 +260,39 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
                     code: error.code
                   });
               }
-              setIsLoading(false); // Enable input if file upload fails
-              return; // Don't send message if file upload fails
+              setIsLoading(false);
+              return;
             } else {
               setError({ 
                 message: 'Failed to upload file. Please try again.'
               });
-              setIsLoading(false); // Enable input if file upload fails
-              return; // Don't send message if file upload fails
+              setIsLoading(false);
+              return;
             }
           }
         }
 
-        // Create a temporary message to show immediately
-        const tempMessage = {
-          id: `temp-${Date.now()}`,
-          content: message.trim(),
-          channel_id: channelId,
-          sender_id: currentUser.id,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          reactions: [],
-          attachments: [],
-          isTemp: true, // Mark as temporary
-          user: currentUser // Include the user object
-        };
-
-        // Dispatch temporary message to store
-        dispatch(addMessage({
-          channelId,
-          message: transformMessage(tempMessage)
-        }));
-
-        // Clear input immediately after showing temp message
+        // Clear input before sending message
+        const messageContent = message.trim();
         setMessage('');
         setAttachedFile(null);
         setMessageSent(true);
-        setIsLoading(false); // Enable input immediately after clearing it
+        setIsLoading(false);
 
         // Send the message to the server
         const messageResponse = await sendMessage({
           channelId,
-          content: message.trim(),
+          content: messageContent,
           fileId
         });
 
-        // Store the numeric message ID before transforming
-        const messageId = parseInt(messageResponse.id.toString(), 10);
-
-        // Update the message in store with server response
-        const transformedMessage = transformMessage(messageResponse);
-        dispatch(addMessage({
-          channelId,
-          message: transformedMessage
-        }));
-
-        // If message mentions @lain, send to AI endpoint after user's message is sent
+        // If message mentions @lain, send to AI endpoint
         if (isLainMention && channelId) {
           try {
             await sendAiMessage({
-              message: message.trim(),
+              message: messageContent,
               channel_id: parseInt(channelId, 10),
-              parent_message_id: messageId
+              parent_message_id: parseInt(messageResponse.id.toString(), 10)
             });
             
             // The bot's response will come through the WebSocket
@@ -349,7 +320,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ channelId }): JSX.Element =
           message: 'Failed to send message. Please try again.',
           isWarning: true
         });
-        setIsLoading(false); // Keep this for error cases
+        setIsLoading(false);
       }
     }
   };

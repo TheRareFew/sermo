@@ -69,6 +69,7 @@ def init_db(create_test_data: bool = False):
     from .models.file import File
     from .models.presence import Presence
     from .models.reaction import Reaction
+    from .models.bot_message_score import BotMessageScore
     from .auth.security import RefreshToken
     
     # Check if tables exist by trying to query the User table

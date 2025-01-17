@@ -50,8 +50,12 @@ const processMessages = (messages: StoreMessage[]) => {
   // Add replies to their parent messages
   mainMessages.forEach(message => {
     if (repliesByParentId[message.id]) {
-      message.replies = repliesByParentId[message.id];
-      message.reply_count = repliesByParentId[message.id].length;
+      // Sort replies by created_at timestamp before assigning
+      const sortedReplies = [...repliesByParentId[message.id]].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      message.replies = sortedReplies;
+      message.reply_count = sortedReplies.length;
     }
   });
 
@@ -119,60 +123,65 @@ export const messagesSlice = createSlice({
         );
         if (parentIndex !== -1) {
           const parent = state.messagesByChannel[channelId][parentIndex];
-          parent.reply_count = (parent.reply_count || 0) + 1;
-          parent.replies = [...(parent.replies || []), {
-            ...message,
-            reactions: message.reactions || [],
-            attachments: message.attachments || [],
-            reply_count: 0,
-            isExpanded: false,
-            repliesLoaded: false
-          }];
+          if (!parent.replies) {
+            parent.replies = [];
+          }
+
+          // Check if reply already exists in parent's replies
+          const existingReplyIndex = parent.replies.findIndex(r => r.id === message.id);
+          if (existingReplyIndex !== -1) {
+            // Update existing reply
+            parent.replies[existingReplyIndex] = {
+              ...parent.replies[existingReplyIndex],
+              ...message,
+              reactions: message.reactions || parent.replies[existingReplyIndex].reactions,
+              attachments: message.attachments || parent.replies[existingReplyIndex].attachments
+            };
+          } else {
+            // Add new reply
+            parent.reply_count = (parent.reply_count || 0) + 1;
+            
+            const newReply = {
+              ...message,
+              reactions: message.reactions || [],
+              attachments: message.attachments || [],
+              reply_count: 0,
+              isExpanded: false,
+              repliesLoaded: false
+            };
+
+            // Find the correct position to insert the reply
+            const insertIndex = parent.replies.findIndex(
+              reply => new Date(reply.created_at) > new Date(message.created_at)
+            );
+
+            if (insertIndex === -1) {
+              // If no later messages found, append to the end
+              parent.replies.push(newReply);
+            } else {
+              // Insert at the correct position
+              parent.replies.splice(insertIndex, 0, newReply);
+            }
+          }
+
+          // Ensure parent message is expanded to show the new reply
+          parent.isExpanded = true;
+          parent.repliesLoaded = true;
+          return;
         }
       }
 
       // Add the message to the main array only if it's not a reply
       if (!message.parent_id) {
-        // If this is a server response for a temporary message, replace the temp message
-        if (!message.isTemp) {
-          const tempIndex = state.messagesByChannel[channelId].findIndex(
-            m => m.isTemp && m.content === message.content
-          );
-          if (tempIndex !== -1) {
-            // Replace the temporary message with the server response
-            state.messagesByChannel[channelId][tempIndex] = {
-              ...message,
-              reactions: message.reactions || [],
-              attachments: message.attachments || [],
-              reply_count: message.reply_count || 0,
-              isExpanded: false,
-              repliesLoaded: false,
-              replies: message.replies || []
-            };
-          } else {
-            // Add as a new message
-            state.messagesByChannel[channelId].push({
-              ...message,
-              reactions: message.reactions || [],
-              attachments: message.attachments || [],
-              reply_count: message.reply_count || 0,
-              isExpanded: false,
-              repliesLoaded: false,
-              replies: message.replies || []
-            });
-          }
-        } else {
-          // Add temporary message
-          state.messagesByChannel[channelId].push({
-            ...message,
-            reactions: message.reactions || [],
-            attachments: message.attachments || [],
-            reply_count: message.reply_count || 0,
-            isExpanded: false,
-            repliesLoaded: false,
-            replies: message.replies || []
-          });
-        }
+        state.messagesByChannel[channelId].push({
+          ...message,
+          reactions: message.reactions || [],
+          attachments: message.attachments || [],
+          reply_count: message.reply_count || 0,
+          isExpanded: false,
+          repliesLoaded: false,
+          replies: message.replies || []
+        });
       }
     },
 

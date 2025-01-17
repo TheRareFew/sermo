@@ -19,6 +19,7 @@ from .websockets import manager
 import asyncio
 from sqlalchemy.orm import joinedload
 from ...ai.message_indexer import index_message
+from ...models.reaction import Reaction as ReactionModel
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -284,6 +285,36 @@ Answer as Lain Iwakura, maintaining consistency with any previous conversations 
         channel_id=request.channel_id,
         message=bot_message
     )
+
+    # Add thumbs up/down reactions from the bot
+    reactions = [
+        ReactionModel(
+            emoji="👍",
+            message_id=bot_message.id,
+            user_id=bot_user.id
+        ),
+        ReactionModel(
+            emoji="👎",
+            message_id=bot_message.id,
+            user_id=bot_user.id
+        )
+    ]
+    db.add_all(reactions)
+    db.commit()
+
+    # Broadcast reactions via WebSocket
+    for reaction in reactions:
+        reaction_data = {
+            "userId": str(bot_user.id),
+            "emoji": reaction.emoji,
+            "timestamp": datetime.now(UTC).isoformat()
+        }
+        await manager.broadcast_reaction(
+            channel_id=request.channel_id,
+            message_id=str(bot_message.id),
+            reaction=reaction_data,
+            is_add=True
+        )
 
     # Return the bot's response
     return MessageResponse(

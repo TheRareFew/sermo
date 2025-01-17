@@ -5,6 +5,7 @@ from typing import List, Optional
 import logging
 from datetime import datetime
 import asyncio
+from fastapi import BackgroundTasks
 
 from ...schemas.message import Message, MessageCreate, MessageUpdate, MessageReply
 from ...models.message import Message as MessageModel
@@ -89,6 +90,7 @@ async def get_channel_messages(
 async def create_message(
     channel_id: int,
     message: MessageCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -150,10 +152,10 @@ async def create_message(
         ).filter(MessageModel.id == db_message.id).first()
 
         # Broadcast the new message via WebSocket
-        await manager.broadcast_message(channel_id, db_message, exclude_user_id=current_user.id)
+        await manager.broadcast_message(channel_id, db_message)
 
-        # Index the message in Pinecone (non-blocking)
-        asyncio.create_task(index_message(db_message))
+        # Start indexing in background without awaiting
+        background_tasks.add_task(index_message, db_message)
 
         return db_message
 
@@ -282,6 +284,7 @@ async def get_message_replies(
 async def create_message_reply(
     message_id: int,
     reply: MessageReply,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -330,11 +333,11 @@ async def create_message_reply(
             joinedload(MessageModel.channel)
         ).filter(MessageModel.id == db_reply.id).first()
 
-        # Index the reply in Pinecone (non-blocking)
-        asyncio.create_task(index_message(db_reply))
-
         # Broadcast the new reply via WebSocket
-        await manager.broadcast_message(parent_message.channel_id, db_reply, exclude_user_id=current_user.id)
+        await manager.broadcast_message(parent_message.channel_id, db_reply)
+
+        # Start indexing in background without awaiting
+        background_tasks.add_task(index_message, db_reply)
 
         return db_reply
 

@@ -22,4 +22,5 @@ class Message(Base):
     channel = relationship("Channel", back_populates="messages")
     reactions = relationship("Reaction", back_populates="message")
     files = relationship("File", back_populates="message")
-    replies = relationship("Message", backref=backref("parent", remote_side=[id])) 
+    replies = relationship("Message", backref=backref("parent", remote_side=[id]))
+    bot_scores = relationship("BotMessageScore", back_populates="message") 

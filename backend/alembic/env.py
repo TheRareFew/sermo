@@ -19,6 +19,7 @@ from app.models.message import Message
 from app.models.file import File
 from app.models.presence import Presence
 from app.models.reaction import Reaction
+from app.models.bot_message_score import BotMessageScore
 from app.database import Base
 
 # this is the Alembic Config object, which provides
