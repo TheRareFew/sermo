@@ -98,30 +98,55 @@ async def send_message_to_bot(
     bot_user = None
     if request.target_user:
         target_username = request.target_user
-        bot_username = f"{target_username}<bot>"
         
-        # Try to find existing bot for this user
-        bot_user = db.query(User).filter(User.username == bot_username).first()
-        if not bot_user:
-            # Create new bot user
-            bot_user = User(
-                username=bot_username,
-                email=f"{target_username}.bot@sermo.ai",
-                status="online",
-                is_bot=True,
-                full_name=f"{target_username}'s Bot",
-                hashed_password=None
-            )
-            db.add(bot_user)
-            db.commit()
-            db.refresh(bot_user)
+        # Special case for Lain - always accessible
+        if target_username.lower() == "lain":
+            bot_user = db.query(User).filter(User.username == "lain").first()
+            if not bot_user:
+                bot_user = User(
+                    username="lain",
+                    email="lain@sermo.ai",
+                    status="online",
+                    is_bot=True,
+                    full_name="Lain Iwakura",
+                    hashed_password=None
+                )
+                db.add(bot_user)
+                db.commit()
+                db.refresh(bot_user)
+        else:
+            # For other users, check if they're offline first
+            target_user = db.query(User).filter(User.username == target_username).first()
+            if not target_user:
+                raise HTTPException(status_code=404, detail="Target user not found")
             
-        # Find target user and generate/update their profile if needed
-        target_user = db.query(User).filter(User.username == target_username).first()
-        if target_user:
+            if target_user.status != "offline":
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Cannot interact with user's bot while they are online"
+                )
+            
+            # Try to find existing bot for this user
+            bot_username = f"{target_username}<bot>"
+            bot_user = db.query(User).filter(User.username == bot_username).first()
+            if not bot_user:
+                # Create new bot user
+                bot_user = User(
+                    username=bot_username,
+                    email=f"{target_username}.bot@sermo.ai",
+                    status="online",
+                    is_bot=True,
+                    full_name=f"{target_username}'s Bot",
+                    hashed_password=None
+                )
+                db.add(bot_user)
+                db.commit()
+                db.refresh(bot_user)
+            
+            # Generate/update profile for offline user
             await check_and_update_profile(db, target_user.id)
     else:
-        # Use default Lain bot
+        # Default to Lain bot if no target user specified
         bot_user = db.query(User).filter(User.username == "lain").first()
         if not bot_user:
             bot_user = User(
@@ -205,7 +230,7 @@ async def send_message_to_bot(
         db=db,
         current_user=current_user,
         request_message=request.message,
-        target_user=request.target_user,
+        target_user=None if request.target_user and request.target_user.lower() == "lain" else request.target_user,
         message_docs_sorted=message_docs_sorted,
         file_chunks=file_chunks,
         file_descriptions=file_descriptions

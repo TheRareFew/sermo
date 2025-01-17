@@ -213,7 +213,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({ channelId, currentUs
       const mentionedUser = usersList.find((u) => u.username === mentionedUsername);
       
       if (mentionedUser) {
-        if (mentionedUser.isBot) {
+        if (mentionedUsername.toLowerCase() === 'lain' || mentionedUser.isBot) {
           setIsLainMention(true);
         } else if (mentionedUser.status === 'offline') {
           // Create bot name with <bot> suffix
@@ -310,7 +310,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({ channelId, currentUs
           const mentionedUsername = mentionMatch[1];
           const mentionedUser = usersList.find((u) => u.username === mentionedUsername);
 
-          if (mentionedUser && (mentionedUser.isBot || mentionedUser.status === 'offline')) {
+          if (mentionedUser && (mentionedUsername.toLowerCase() === 'lain' || mentionedUser.isBot || mentionedUser.status === 'offline')) {
             try {
               await sendAiMessage({
                 message: messageContent,

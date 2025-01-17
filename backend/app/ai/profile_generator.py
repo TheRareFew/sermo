@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from datetime import datetime, time, timedelta, UTC
 from collections import Counter
@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from ..models.message import Message
 from ..models.user import User
+from ..models.file import File
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 async def check_and_update_profile(db: Session, target_user_id: int) -> None:
     """
     Check if a user's profile needs to be updated and generate a new one if needed.
-    A profile needs updating if it hasn't been generated in the last 24 hours.
+    A profile needs updating if it hasn't been generated in the last hour.
     """
     try:
         user = db.query(User).filter(User.id == target_user_id).first()
@@ -27,7 +28,7 @@ async def check_and_update_profile(db: Session, target_user_id: int) -> None:
         # Check if profile needs updating
         needs_update = (
             user.last_profile_generated is None or
-            (datetime.now(UTC) - user.last_profile_generated) > timedelta(hours=24)
+            (datetime.now(UTC) - user.last_profile_generated) > timedelta(hours=1)
         )
 
         if needs_update:
@@ -114,6 +115,63 @@ def analyze_communication_style(messages: List[Message]) -> Dict[str, Any]:
         "communication_style": style
     }
 
+def analyze_file_patterns(files: List[File]) -> Dict[str, Any]:
+    """Analyze user's file sharing patterns."""
+    try:
+        if not files:
+            return {
+                "common_file_types": [],
+                "total_files": 0,
+                "avg_files_per_day": 0,
+                "shares_files": False
+            }
+        
+        # Track file types
+        file_type_counts = Counter()
+        for file in files:
+            try:
+                if hasattr(file, 'file_type') and file.file_type:
+                    main_type = file.file_type.split('/')[0]
+                    file_type_counts[main_type] += 1
+            except (AttributeError, ValueError) as e:
+                logger.warning(f"Could not process file type for file {file.id}: {e}")
+        
+        # Determine most common file categories
+        common_types = sorted(
+            [(ftype, count) for ftype, count in file_type_counts.items()],
+            key=lambda x: x[1],
+            reverse=True
+        )
+        
+        # Analyze file sharing frequency
+        try:
+            file_dates = [file.created_at.date() for file in files if hasattr(file, 'created_at')]
+            unique_days = len(set(file_dates))
+            total_files = len(files)
+            
+            # Calculate average files per active day
+            avg_files_per_day = total_files / unique_days if unique_days > 0 else 0
+        except Exception as e:
+            logger.warning(f"Error calculating file frequency: {e}")
+            unique_days = 0
+            total_files = len(files)
+            avg_files_per_day = 0
+        
+        return {
+            "common_file_types": [ftype for ftype, _ in common_types],
+            "total_files": total_files,
+            "avg_files_per_day": avg_files_per_day,
+            "shares_files": total_files > 0
+        }
+    except Exception as e:
+        logger.error(f"Error in analyze_file_patterns: {e}")
+        return {
+            "common_file_types": [],
+            "total_files": 0,
+            "avg_files_per_day": 0,
+            "shares_files": False
+        }
+
 async def generate_user_profile(db: Session, user_id: int) -> str:
     """Generate a profile description for a user based on their message history."""
     try:
@@ -126,16 +184,25 @@ async def generate_user_profile(db: Session, user_id: int) -> str:
             .all()
         )
         
-        if not messages:
-            return "Not enough message history to generate a profile."
+        # Get user's files
+        files = (
+            db.query(File)
+            .filter(File.uploaded_by_id == user_id)
+            .order_by(File.created_at.desc())
+            .all()
+        )
+        
+        if not messages and not files:
+            return "Not enough history to generate a profile."
         
         # Analyze patterns
         activity_patterns = analyze_activity_patterns(messages)
         comm_style = analyze_communication_style(messages)
+        file_patterns = analyze_file_patterns(files)
         
         # Create prompt for GPT
         prompt = PromptTemplate(
-            template="""Based on the user's message history and analysis, generate a natural description of their profile. Include their communication style, activity patterns, and apparent interests.
+            template="""Based on the user's message history and file sharing patterns, generate a natural description of their profile. Include their communication style, activity patterns, and apparent interests.
 
 Analysis:
 - Most active during the {most_active_period}
@@ -144,6 +211,9 @@ Analysis:
 - Communication style: {comm_style}
 - {code_note}
 - {emoji_note}
+- File sharing: {file_sharing_note}
+- Common file types: {file_types}
+- File frequency: {file_frequency}
 
 Recent messages (newest first):
 {messages}
@@ -152,7 +222,8 @@ Generate a natural, paragraph-form description that captures the user's personal
 1. Communication style and preferences
 2. Typical activity patterns and availability
 3. Apparent interests and topics they discuss
-4. Any notable patterns in their interactions
+4. File sharing habits and preferences
+5. Any notable patterns in their interactions
 
 Keep the description professional but conversational. Don't explicitly mention message counts or technical metrics.""",
             input_variables=[
@@ -162,6 +233,9 @@ Keep the description professional but conversational. Don't explicitly mention m
                 "comm_style",
                 "code_note",
                 "emoji_note",
+                "file_sharing_note",
+                "file_types",
+                "file_frequency",
                 "messages"
             ]
         )
@@ -172,6 +246,11 @@ Keep the description professional but conversational. Don't explicitly mention m
             for msg in messages[:10]  # Only include first 10 messages in prompt
         ])
         
+        # Create file sharing notes
+        file_sharing_note = "Frequently shares files" if file_patterns.get("shares_files", False) else "Rarely shares files"
+        file_types = ", ".join(file_patterns.get("common_file_types", ["none"]))
+        file_frequency = f"Shares approximately {file_patterns.get('avg_files_per_day', 0):.1f} files per active day" if file_patterns.get("shares_files", False) else "No file sharing activity"
+        
         # Create prompt variables
         prompt_vars = {
             "most_active_period": activity_patterns.get("most_active_period", "various times"),
@@ -180,6 +259,9 @@ Keep the description professional but conversational. Don't explicitly mention m
             "comm_style": comm_style.get("communication_style", "varied"),
             "code_note": "Frequently shares code examples" if comm_style.get("uses_code_blocks") else "Rarely shares code",
             "emoji_note": "Often uses emojis" if comm_style.get("uses_emojis") else "Rarely uses emojis",
+            "file_sharing_note": file_sharing_note,
+            "file_types": file_types,
+            "file_frequency": file_frequency,
             "messages": message_text
         }
         
