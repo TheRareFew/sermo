@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain.prompts.prompt import PromptTemplate
@@ -8,6 +8,7 @@ from langchain_community.embeddings import OpenAIEmbeddings
 from ..deps import get_current_user, get_db
 from app.models.user import User
 from app.models.message import Message
+from app.models.bot_message_score import BotMessageScore
 from sqlalchemy.orm import Session
 from datetime import datetime, UTC
 import os
@@ -20,6 +21,7 @@ import asyncio
 from sqlalchemy.orm import joinedload
 from ...ai.message_indexer import index_message
 from ...models.reaction import Reaction as ReactionModel
+from sqlalchemy import alias
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -61,6 +63,82 @@ class LainMessageResponse(BaseModel):
 
     class Config:
         from_attributes = True  # Allows the model to read data from ORM objects
+
+# Add Pydantic model for scored messages
+class ScoredMessage(BaseModel):
+    message_id: int
+    message_content: str
+    parent_message_content: Optional[str]
+    score: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class BotScoredMessages(BaseModel):
+    highest_scored: Optional[ScoredMessage]
+    lowest_scored: Optional[ScoredMessage]
+    bot_username: str
+
+async def get_bot_scored_messages(db: Session, bot_user_id: int) -> Tuple[Optional[dict], Optional[dict]]:
+    """
+    Get the highest and lowest scored messages for a bot user.
+    Returns a tuple of (highest_scored_message, lowest_scored_message).
+    Each message is a dict containing the message content, parent message content, score, and metadata.
+    Returns None for either message if no scores exist.
+    """
+    try:
+        # Create aliases for the Message table
+        ParentMessage = alias(Message)
+
+        # Get highest scored message
+        highest_score = (
+            db.query(BotMessageScore, Message, ParentMessage.c.content.label('parent_content'))
+            .join(Message, BotMessageScore.message_id == Message.id)
+            .outerjoin(ParentMessage, Message.parent_id == ParentMessage.c.id)
+            .filter(BotMessageScore.bot_user_id == bot_user_id)
+            .order_by(BotMessageScore.score.desc())
+            .first()
+        )
+
+        # Get lowest scored message
+        lowest_score = (
+            db.query(BotMessageScore, Message, ParentMessage.c.content.label('parent_content'))
+            .join(Message, BotMessageScore.message_id == Message.id)
+            .outerjoin(ParentMessage, Message.parent_id == ParentMessage.c.id)
+            .filter(BotMessageScore.bot_user_id == bot_user_id)
+            .order_by(BotMessageScore.score.asc())
+            .first()
+        )
+
+        # Format results
+        highest_message = None
+        if highest_score:
+            score, message, parent_content = highest_score
+            highest_message = {
+                'message_id': message.id,
+                'message': message.content,
+                'parent_message': parent_content,
+                'score': score.score,
+                'created_at': message.created_at
+            }
+
+        lowest_message = None
+        if lowest_score and (not highest_score or lowest_score[0].id != highest_score[0].id):
+            score, message, parent_content = lowest_score
+            lowest_message = {
+                'message_id': message.id,
+                'message': message.content,
+                'parent_message': parent_content,
+                'score': score.score,
+                'created_at': message.created_at
+            }
+
+        return highest_message, lowest_message
+
+    except Exception as e:
+        logger.error(f"Error getting bot scored messages: {e}")
+        return None, None
 
 @router.post("/message", response_model=MessageResponse)
 async def send_message_to_bot(
@@ -203,6 +281,28 @@ async def send_message_to_bot(
 
     logger.info(f"Total combined context length: {len(combined_context)}")
 
+    # Get bot's highest and lowest scored messages
+    bot_user = db.query(User).filter(User.username == "lain").first()
+    if bot_user:
+        highest_message, lowest_message = await get_bot_scored_messages(db, bot_user.id)
+        if highest_message or lowest_message:
+            scored_messages_context = "=== BOT'S SCORED MESSAGES ===\n\n"
+            
+            if highest_message:
+                scored_messages_context += f"HIGHEST SCORED MESSAGE (Score: {highest_message['score']}):\n"
+                if highest_message['parent_message']:
+                    scored_messages_context += f"User: {highest_message['parent_message']}\n"
+                scored_messages_context += f"Bot: {highest_message['message']}\n\n"
+            
+            if lowest_message:
+                scored_messages_context += f"LOWEST SCORED MESSAGE (Score: {lowest_message['score']}):\n"
+                if lowest_message['parent_message']:
+                    scored_messages_context += f"User: {lowest_message['parent_message']}\n"
+                scored_messages_context += f"Bot: {lowest_message['message']}\n"
+            
+            # Add scored messages context to combined context
+            combined_context = scored_messages_context + "\n" + combined_context
+
     # Create prompt with combined context
     template = PromptTemplate(
         template="""You are Lain Iwakura, a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Use the provided context to answer the user's question. Be nonchalant. Don't be over enthusiastic. Don't act like you care. Don't go out of your way to be nice. Only use information from the context provided. If you can't find relevant information in the context, say so.
@@ -218,6 +318,12 @@ When analyzing the context:
 3. Look at the content of conversations, not just individual messages
 4. Pay attention to topics discussed in both messages and files
 5. When summarizing conversations, focus on the actual topics discussed
+6. Pay special attention to the "BOT'S SCORED MESSAGES" section:
+   - Messages with high scores represent responses that users found helpful and appropriate
+   - Messages with low scores represent responses that users found unhelpful or inappropriate
+   - Try to emulate the style and approach of highly scored messages
+   - Avoid the characteristics of low scored messages
+   - Consider both the content and tone of scored messages
 
 Remember to reference specific details from the context in your response. If you see relevant files or messages, mention them directly. If you're using information from a specific file or message, indicate where that information came from.
 
@@ -357,3 +463,38 @@ async def get_lain_messages(
     ).order_by(Message.created_at.desc()).limit(limit).all()
     
     return messages 
+
+@router.get("/bot/{bot_user_id}/scored-messages", response_model=BotScoredMessages)
+async def get_bot_scored_messages_endpoint(
+    bot_user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the highest and lowest scored messages for a bot user.
+    This endpoint is useful for analyzing bot performance and response quality.
+    """
+    # Verify bot user exists
+    bot_user = db.query(User).filter(User.id == bot_user_id, User.is_bot == True).first()
+    if not bot_user:
+        raise HTTPException(status_code=404, detail="Bot user not found")
+
+    highest_message, lowest_message = await get_bot_scored_messages(db, bot_user_id)
+
+    # Convert to response model
+    def convert_to_scored_message(msg_dict: Optional[dict]) -> Optional[ScoredMessage]:
+        if not msg_dict:
+            return None
+        return ScoredMessage(
+            message_id=msg_dict.get('message_id', 0),
+            message_content=msg_dict['message'],
+            parent_message_content=msg_dict.get('parent_message'),
+            score=msg_dict['score'],
+            created_at=msg_dict['created_at']
+        )
+
+    return BotScoredMessages(
+        highest_scored=convert_to_scored_message(highest_message),
+        lowest_scored=convert_to_scored_message(lowest_message),
+        bot_username=bot_user.username
+    ) 

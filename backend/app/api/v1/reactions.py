@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
@@ -9,6 +9,7 @@ from ...schemas.reaction import Reaction, ReactionCreate
 from ...models.reaction import Reaction as ReactionModel
 from ...models.message import Message
 from ...models.channel import Channel
+from ...models.bot_message_score import BotMessageScore
 from ..deps import get_db, get_current_user
 from ...models.user import User
 from .websockets import manager
@@ -16,23 +17,81 @@ from .websockets import manager
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+async def update_bot_message_score(db: Session, message_id: int):
+    """Update bot message score based on thumbs up/down reactions"""
+    try:
+        # Get the message
+        message = db.query(Message).filter(Message.id == message_id).first()
+        if not message or not message.is_bot:
+            return
+        
+        # Count thumbs up and thumbs down reactions
+        reactions = db.query(ReactionModel).filter(
+            ReactionModel.message_id == message_id,
+            ReactionModel.emoji.in_(['👍', '👎'])
+        ).all()
+        
+        score = sum(1 if r.emoji == '👍' else -1 for r in reactions)
+        
+        # Get or create bot message score
+        bot_score = db.query(BotMessageScore).filter(
+            BotMessageScore.message_id == message_id,
+            BotMessageScore.bot_user_id == message.sender_id
+        ).first()
+        
+        if bot_score:
+            bot_score.score = score
+        else:
+            bot_score = BotMessageScore(
+                message_id=message_id,
+                bot_user_id=message.sender_id,
+                score=score
+            )
+            db.add(bot_score)
+        
+        db.commit()
+        logger.debug(f"Updated bot message score for message {message_id}: {score}")
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Error updating bot message score: {e}")
+        db.rollback()
+
 @router.post("/{message_id}/reactions", response_model=Reaction)
 async def add_reaction(
     message_id: int,
-    reaction: ReactionCreate,
+    reaction: ReactionCreate = Body(..., embed=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Add reaction to message"""
     try:
+        # Log the raw request data
+        logger.debug(f"Adding reaction - message_id: {message_id}, reaction data: {reaction}")
+        
+        if not hasattr(reaction, 'emoji'):
+            logger.error("Invalid reaction data: missing emoji field")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reaction data: missing emoji field"
+            )
+
+        if not reaction.emoji:
+            logger.error("Invalid reaction data: empty emoji")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reaction data: empty emoji"
+            )
+        
         # Check message exists and user has access
         message = db.query(Message).filter(Message.id == message_id).first()
         if not message:
+            logger.debug(f"Message {message_id} not found")
             raise HTTPException(status_code=404, detail="Message not found")
 
         # Check channel access
         channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
         if current_user.id not in [member.id for member in channel.members]:
+            logger.debug(f"User {current_user.id} not authorized to access channel {channel.id}")
             raise HTTPException(status_code=403, detail="Not authorized to react to this message")
 
         # Check if user already reacted with this emoji
@@ -46,6 +105,7 @@ async def add_reaction(
             .first()
         )
         if existing_reaction:
+            logger.debug(f"User {current_user.id} already reacted with emoji {reaction.emoji}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Already reacted with this emoji"
@@ -60,6 +120,11 @@ async def add_reaction(
         db.add(db_reaction)
         db.commit()
         db.refresh(db_reaction)
+        logger.debug(f"Created reaction {db_reaction.id}")
+
+        # Update bot message score if this is a thumbs up/down reaction
+        if message.is_bot and reaction.emoji in ['👍', '👎']:
+            await update_bot_message_score(db, message_id)
 
         # Broadcast reaction via WebSocket
         reaction_data = {
@@ -73,6 +138,7 @@ async def add_reaction(
             reaction=reaction_data,
             is_add=True
         )
+        logger.debug("Successfully broadcast reaction")
 
         return db_reaction
 
@@ -127,6 +193,75 @@ async def remove_reaction(
 
     except SQLAlchemyError as e:
         logger.error(f"Database error in remove_reaction: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.delete("/{message_id}/reactions", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_reaction_by_emoji(
+    message_id: int,
+    emoji: str = Query(..., description="The emoji to remove"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Remove reaction from message by emoji"""
+    try:
+        logger.debug(f"Attempting to remove reaction - message_id: {message_id}, emoji: {emoji}, user_id: {current_user.id}")
+        
+        # Check message exists and user has access
+        message = db.query(Message).filter(Message.id == message_id).first()
+        if not message:
+            logger.debug(f"Message {message_id} not found")
+            raise HTTPException(status_code=404, detail="Message not found")
+
+        # Check channel access
+        channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
+        if current_user.id not in [member.id for member in channel.members]:
+            logger.debug(f"User {current_user.id} not authorized to access channel {channel.id}")
+            raise HTTPException(status_code=403, detail="Not authorized to react to this message")
+
+        # Find the reaction
+        reaction_to_remove = (
+            db.query(ReactionModel)
+            .filter(
+                ReactionModel.message_id == message_id,
+                ReactionModel.user_id == current_user.id,
+                ReactionModel.emoji == emoji
+            )
+            .first()
+        )
+
+        if not reaction_to_remove:
+            logger.debug(f"Reaction not found - message_id: {message_id}, emoji: {emoji}, user_id: {current_user.id}")
+            raise HTTPException(status_code=404, detail="Reaction not found")
+
+        logger.debug(f"Found reaction to remove: {reaction_to_remove.id}")
+
+        # Store reaction data before deletion
+        reaction_data = {
+            "userId": str(current_user.id),
+            "emoji": reaction_to_remove.emoji
+        }
+
+        # Delete reaction
+        db.delete(reaction_to_remove)
+        db.commit()
+        logger.debug(f"Successfully deleted reaction {reaction_to_remove.id}")
+
+        # Update bot message score if this was a thumbs up/down reaction
+        if message.is_bot and emoji in ['👍', '👎']:
+            await update_bot_message_score(db, message_id)
+
+        # Broadcast reaction removal via WebSocket
+        await manager.broadcast_reaction(
+            channel_id=channel.id,
+            message_id=str(message_id),
+            reaction=reaction_data,
+            is_add=False
+        )
+        logger.debug("Successfully broadcast reaction removal")
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in remove_reaction_by_emoji: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 

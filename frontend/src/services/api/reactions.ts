@@ -8,15 +8,25 @@ export const getReactions = async (messageId: string): Promise<Reaction[]> => {
 };
 
 export const addReaction = async (messageId: string, emoji: string): Promise<Reaction> => {
+  const requestData = { emoji };
+  const body = JSON.stringify(requestData);
+  console.debug(`Adding reaction - messageId: ${messageId}, emoji: ${emoji}, requestData:`, requestData, 'body:', body);
   return apiRequest(`/messages/${messageId}/reactions`, {
     method: 'POST',
-    body: JSON.stringify({ emoji })
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body
   });
 };
 
 export const removeReaction = async (messageId: string, emoji: string): Promise<void> => {
-  return apiRequest(`/messages/${messageId}/reactions`, {
+  const encodedEmoji = encodeURIComponent(emoji);
+  console.debug(`Removing reaction - messageId: ${messageId}, emoji: ${emoji}, encoded: ${encodedEmoji}`);
+  return apiRequest(`/messages/${messageId}/reactions?emoji=${encodedEmoji}`, {
     method: 'DELETE',
-    body: JSON.stringify({ emoji })
+    headers: {
+      'Content-Type': 'application/json'
+    }
   });
 }; 

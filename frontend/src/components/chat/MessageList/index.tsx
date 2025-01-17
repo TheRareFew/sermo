@@ -440,8 +440,22 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
       console.log('Adding reaction to message:', messageId, emoji);
       await addReaction(messageId, emoji);
       console.log('Reaction added successfully, waiting for WebSocket event');
-    } catch (error) {
-      console.error('Failed to add reaction:', error);
+    } catch (error: any) {
+      // Try to parse the error message
+      try {
+        const errorData = error?.message ? JSON.parse(error.message.replace('API error (400): ', '')) : null;
+        if (errorData?.detail === "Already reacted with this emoji") {
+          // If user already reacted, remove the reaction instead
+          console.debug('User already reacted with this emoji, removing reaction instead');
+          await handleReactionRemove(messageId, emoji);
+          return;
+        }
+      } catch {
+        // If we can't parse the error, it's an unexpected error format
+        console.error('Failed to add reaction:', error);
+      }
+      
+      // For other errors, show the generic error message
       dispatch(setError('Failed to add reaction'));
     }
   };

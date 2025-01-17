@@ -264,19 +264,21 @@ class ConnectionManager:
     async def broadcast_reaction(self, channel_id: int, message_id: str, reaction: dict, is_add: bool = True):
         """Broadcast a reaction update to all users in a channel"""
         try:
-            message_type = "reaction_added" if is_add else "reaction_removed"
+            message_type = "REACTION_ADDED" if is_add else "REACTION_REMOVED"
             
             message = {
                 "type": message_type,
                 "payload": {
                     "channelId": str(channel_id),
                     "messageId": str(message_id),
-                    "reaction": reaction if is_add else {
-                        "userId": str(reaction["userId"]),
-                        "emoji": reaction["emoji"]
-                    }
+                    "reaction" if is_add else "userId": reaction if is_add else str(reaction["userId"]),
+                    "emoji": reaction["emoji"] if not is_add else None
                 }
             }
+            
+            # Remove None values from payload
+            if not is_add:
+                message["payload"] = {k: v for k, v in message["payload"].items() if v is not None}
             
             logger.debug(f"Broadcasting reaction update - type: {message_type}, message: {message_id}")
             await self.broadcast_to_channel(

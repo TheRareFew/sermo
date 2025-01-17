@@ -24,7 +24,7 @@ interface BaseWebSocketMessage {
 }
 
 interface ReactionAddedMessage extends BaseWebSocketMessage {
-  type: 'reaction_added';
+  type: 'REACTION_ADDED';
   payload: {
     channelId: string;
     messageId: string;
@@ -33,7 +33,7 @@ interface ReactionAddedMessage extends BaseWebSocketMessage {
 }
 
 interface ReactionRemovedMessage extends BaseWebSocketMessage {
-  type: 'reaction_removed';
+  type: 'REACTION_REMOVED';
   payload: {
     channelId: string;
     messageId: string;
@@ -79,7 +79,7 @@ type WebSocketMessage =
   | BaseWebSocketMessage;
 
 function isReactionAddedMessage(message: WebSocketMessage): message is ReactionAddedMessage {
-  return message.type === 'reaction_added' && 
+  return message.type === 'REACTION_ADDED' && 
          'payload' in message && 
          message.payload && 
          'channelId' in message.payload &&
@@ -88,7 +88,7 @@ function isReactionAddedMessage(message: WebSocketMessage): message is ReactionA
 }
 
 function isReactionRemovedMessage(message: WebSocketMessage): message is ReactionRemovedMessage {
-  return message.type === 'reaction_removed' && 
+  return message.type === 'REACTION_REMOVED' && 
          'payload' in message && 
          message.payload && 
          'channelId' in message.payload &&

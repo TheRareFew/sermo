@@ -51,20 +51,29 @@ export async function apiRequest<T>(
       return handleUnauthorizedResponse({ status: 401 });
     }
 
-    console.log(`Response status for ${endpoint}:`, response.status);
-    console.log(`Response headers for ${endpoint}:`, Object.fromEntries(response.headers.entries()));
+    // Only log non-400 status codes as they might be expected business logic
+    if (response.status !== 400) {
+      console.log(`Response status for ${endpoint}:`, response.status);
+      console.log(`Response headers for ${endpoint}:`, Object.fromEntries(response.headers.entries()));
+    }
 
     let data;
     const contentType = response.headers.get('content-type');
     const responseText = await response.text();
     
-    console.log(`Raw response text for ${endpoint}:`, responseText);
+    // Only log response text for non-400 status codes
+    if (response.status !== 400) {
+      console.log(`Raw response text for ${endpoint}:`, responseText);
+    }
 
     try {
       if (responseText) {
         try {
           data = JSON.parse(responseText);
-          console.log(`Parsed response data for ${endpoint}:`, data);
+          // Only log parsed data for non-400 status codes
+          if (response.status !== 400) {
+            console.log(`Parsed response data for ${endpoint}:`, data);
+          }
         } catch (parseError) {
           console.warn(`Response is not JSON for ${endpoint}, using raw text`);
           data = responseText;
@@ -79,11 +88,20 @@ export async function apiRequest<T>(
     }
 
     if (!response.ok) {
-      console.error(`API error for ${endpoint}:`, {
-        status: response.status,
-        statusText: response.statusText,
-        data
-      });
+      // Only log non-400 errors as errors, log 400s as debug
+      if (response.status === 400) {
+        console.debug(`API 400 response for ${endpoint}:`, {
+          status: response.status,
+          statusText: response.statusText,
+          data
+        });
+      } else {
+        console.error(`API error for ${endpoint}:`, {
+          status: response.status,
+          statusText: response.statusText,
+          data
+        });
+      }
 
       let errorMessage = 'An error occurred';
       if (typeof data === 'object' && data !== null) {
@@ -101,10 +119,13 @@ export async function apiRequest<T>(
 
     return data;
   } catch (error) {
-    console.error(`Request failed for ${endpoint}:`, {
-      error,
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    // Only log non-400 errors as errors
+    if (error instanceof Error && !error.message.includes('API error (400)')) {
+      console.error(`Request failed for ${endpoint}:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
     throw error instanceof Error ? error : new Error('API request failed');
   }
 }
