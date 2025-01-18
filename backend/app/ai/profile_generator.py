@@ -26,9 +26,12 @@ async def check_and_update_profile(db: Session, target_user_id: int) -> None:
             return
 
         # Check if profile needs updating
+        current_time = datetime.now(UTC)
+        last_generated = user.last_profile_generated.replace(tzinfo=UTC) if user.last_profile_generated else None
+        
         needs_update = (
-            user.last_profile_generated is None or
-            (datetime.now(UTC) - user.last_profile_generated) > timedelta(hours=1)
+            last_generated is None or
+            (current_time - last_generated) > timedelta(hours=1)
         )
 
         if needs_update:
@@ -36,7 +39,7 @@ async def check_and_update_profile(db: Session, target_user_id: int) -> None:
             await generate_user_profile(db, target_user_id)
             
             # Update last_profile_generated timestamp
-            user.last_profile_generated = datetime.now(UTC)
+            user.last_profile_generated = current_time
             db.commit()
             logger.info(f"Updated profile generation timestamp for user {target_user_id}")
         else:

@@ -43,6 +43,7 @@ export interface RawMessage {
   replies?: StoreMessage[];
   reactions: Reaction[];
   attachments: any[];
+  has_attachments?: boolean;
   user?: User;
   is_bot?: boolean;
   isTemp?: boolean;

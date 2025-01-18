@@ -67,6 +67,9 @@ const MessageText = styled.div`
   min-width: 300px; /* Force wrap on longer messages */
   white-space: pre-wrap;
   word-wrap: break-word;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
 `;
 
 const ButtonsContainer = styled.div`
@@ -142,8 +145,9 @@ const AttachmentsContainer = styled.div`
 
 const AttachmentIcon = styled.span`
   color: #888;
-  margin-left: 2px;
   cursor: pointer;
+  margin-right: 4px;
+  flex-shrink: 0;
   
   &:hover {
     color: #fff;
@@ -313,28 +317,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
       <MessageContent>
         <MessageRow>
           <MessageText>
-            <Sender $is_bot={is_bot}>{sender}</Sender> [{formattedTime}]: {content}
-            {is_bot && sender && typeof sender === 'string' && sender.toLowerCase() === 'lain' && (
-              <VoiceIndicator 
-                onClick={handleVoicePlayback}
-                $isPlaying={isPlayingVoice}
-                title={isPlayingVoice ? "Playing voice..." : "Play voice"}
-              >
-                {isPlayingVoice ? '🔊' : '🔈'}
-              </VoiceIndicator>
-            )}
-            {playbackError && (
-              <Tooltip>
-                {playbackError}
-              </Tooltip>
-            )}
-          </MessageText>
-          <ButtonsContainer>
             {has_attachments && (
               <AttachmentIcon onClick={handleAttachmentToggle} title="Toggle attachments">
                 📎
               </AttachmentIcon>
             )}
+            <div>
+              <Sender $is_bot={is_bot}>{sender}</Sender> [{formattedTime}]: {content}
+              {is_bot && sender && typeof sender === 'string' && sender.toLowerCase() === 'lain' && (
+                <VoiceIndicator 
+                  onClick={handleVoicePlayback}
+                  $isPlaying={isPlayingVoice}
+                  title={isPlayingVoice ? "Playing voice..." : "Play voice"}
+                >
+                  {isPlayingVoice ? '🔊' : '🔈'}
+                </VoiceIndicator>
+              )}
+              {playbackError && (
+                <Tooltip>
+                  {playbackError}
+                </Tooltip>
+              )}
+            </div>
+          </MessageText>
+          <ButtonsContainer>
             {replyCount > 0 && (
               <ReplyCount onClick={onToggleReplies}>
                 [{isExpanded ? '-' : '+'} {replyCount} {replyCount === 1 ? 'reply' : 'replies'}]

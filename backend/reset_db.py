@@ -32,6 +32,18 @@ def create_test_data(db: SessionLocal):
             for i in range(2)  # Creates test_00 and test_01
         ]
         
+        # Create Lain bot user
+        lain_bot = User(
+            username="lain",
+            email="lain@sermo.ai",
+            full_name="Lain Iwakura",
+            description="I am Lain, an AI assistant. Let's all love Lain!",
+            status="online",
+            is_bot=True,
+            hashed_password=None
+        )
+        test_users.append(lain_bot)
+        
         for user in test_users:
             db.add(user)
         db.flush()  # Get IDs without committing
@@ -47,7 +59,7 @@ def create_test_data(db: SessionLocal):
         db.add(general_channel)
         db.flush()
         
-        # Add both users to the channel
+        # Add all users to the channel
         general_channel.members.extend(test_users)
         
         db.commit()

@@ -43,7 +43,7 @@ export const transformMessage = (message: RawMessage): StoreMessage => {
     reply_count,
     reactions: message.reactions || [],
     attachments: message.attachments || [],
-    has_attachments: message.attachments?.length > 0 || false,
+    has_attachments: message.has_attachments || message.attachments?.length > 0 || false,
     is_bot: message.is_bot || false,
     isExpanded: false,
     replies: []
