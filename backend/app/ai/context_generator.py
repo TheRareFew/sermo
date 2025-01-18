@@ -151,36 +151,42 @@ async def generate_lain_context(
     """Generate context specifically for Lain bot."""
     combined_context = ""
     
-    # Add message context first
-    message_context = generate_message_context(message_docs_sorted)
-    if message_context.strip() != "=== RECENT USER MESSAGES ===\n(Showing newest first)":
-        combined_context += message_context + "\n\n"
-    
-    # Add Lain's previous interactions
-    lain_user = db.query(User).filter(User.is_bot == True).first()
+    # Add Lain's previous interactions first (most important context)
+    lain_user = db.query(User).filter(User.is_bot == True, User.username == "lain").first()
     if lain_user:
+        # Get the last 5 conversation pairs between user and Lain
         lain_messages = db.query(Message).filter(
             Message.sender_id == lain_user.id,
             Message.parent_id.in_(
                 db.query(Message.id).filter(Message.sender_id == current_user.id)
             )
-        ).order_by(Message.created_at.desc()).limit(2).all()
+        ).order_by(Message.created_at.desc()).limit(5).all()
         
         if lain_messages:
-            lain_context = "=== RECENT INTERACTIONS WITH LAIN ===\n\n" + "\n\n".join([
+            lain_context = "=== RECENT CONVERSATIONS WITH LAIN ===\n\n" + "\n\n".join([
                 f"[{msg.created_at.isoformat()}]\n"
-                f"You: {msg.parent.content}\n"
+                f"{current_user.username}: {msg.parent.content if msg.parent else '[No parent message]'}\n"
                 f"Lain: {msg.content}"
                 for msg in reversed(lain_messages)
-                if msg.parent is not None
             ])
-            if lain_context.strip() != "=== RECENT INTERACTIONS WITH LAIN ===":
-                combined_context += lain_context + "\n\n"
+            combined_context += lain_context + "\n\n"
     
     # Add scored messages context
-    scored_messages_context = await generate_scored_messages_context(db, lain_user.id)
-    if scored_messages_context:
-        combined_context = scored_messages_context + "\n" + combined_context
+    if lain_user:
+        scored_messages_context = await generate_scored_messages_context(db, lain_user.id)
+        if scored_messages_context:
+            combined_context += scored_messages_context + "\n\n"
+    
+    # Add semantically relevant messages from Pinecone
+    if message_docs_sorted:
+        relevant_context = "=== SEMANTICALLY RELEVANT MESSAGES ===\n\n" + "\n\n".join([
+            f"[{doc.metadata.get('timestamp')}]\n"
+            f"User: {doc.metadata.get('sender')}\n"
+            f"Channel: {doc.metadata.get('channel')}\n"
+            f"Message: {doc.page_content}"
+            for doc in message_docs_sorted[:5]  # Limit to top 5 most relevant messages
+        ])
+        combined_context += relevant_context + "\n\n"
     
     # Add file information
     file_chunks_context, file_descriptions_context = generate_file_contexts(file_chunks, file_descriptions)
@@ -203,11 +209,6 @@ async def generate_user_bot_context(
     """Generate context for user-specific bots."""
     combined_context = ""
     
-    # Add message context first
-    message_context = generate_message_context(message_docs_sorted)
-    if message_context.strip() != "=== RECENT USER MESSAGES ===\n(Showing newest first)":
-        combined_context += message_context + "\n\n"
-    
     # Add target user's profile and previous messages
     target_user_obj = db.query(User).filter(User.username == target_user).first()
     if target_user_obj:
@@ -216,32 +217,43 @@ async def generate_user_bot_context(
             user_profile = f"=== USER PROFILE ===\n{target_user_obj.description}\n\n"
             combined_context = user_profile + combined_context
         
-        user_messages = db.query(Message).filter(
-            Message.sender_id == target_user_obj.id,
-            Message.parent_id.in_(
-                db.query(Message.id).filter(Message.sender_id == current_user.id)
-            )
-        ).order_by(Message.created_at.desc()).limit(2).all()
-        
-        if user_messages:
-            user_context = f"=== RECENT INTERACTIONS WITH {target_user.upper()} ===\n\n" + "\n\n".join([
-                f"[{msg.created_at.isoformat()}]\n"
-                f"You: {msg.parent.content}\n"
-                f"{target_user}: {msg.content}"
-                for msg in reversed(user_messages)
-                if msg.parent is not None
-            ])
-            if user_context.strip() != f"=== RECENT INTERACTIONS WITH {target_user.upper()} ===":
-                combined_context += user_context + "\n\n"
-        
         # Get bot user for target user
         bot_username = f"{target_user}<bot>"
         bot_user = db.query(User).filter(User.username == bot_username).first()
+        
+        # Get the last 5 conversation pairs between user and bot
         if bot_user:
+            user_messages = db.query(Message).filter(
+                Message.sender_id == bot_user.id,
+                Message.parent_id.in_(
+                    db.query(Message.id).filter(Message.sender_id == current_user.id)
+                )
+            ).order_by(Message.created_at.desc()).limit(5).all()
+            
+            if user_messages:
+                user_context = f"=== RECENT CONVERSATIONS WITH {target_user.upper()} ===\n\n" + "\n\n".join([
+                    f"[{msg.created_at.isoformat()}]\n"
+                    f"{current_user.username}: {msg.parent.content if msg.parent else '[No parent message]'}\n"
+                    f"{target_user}: {msg.content}"
+                    for msg in reversed(user_messages)
+                ])
+                combined_context += user_context + "\n\n"
+            
             # Add scored messages context
             scored_messages_context = await generate_scored_messages_context(db, bot_user.id)
             if scored_messages_context:
-                combined_context = scored_messages_context + "\n" + combined_context
+                combined_context += scored_messages_context + "\n\n"
+    
+    # Add semantically relevant messages from Pinecone
+    if message_docs_sorted:
+        relevant_context = "=== SEMANTICALLY RELEVANT MESSAGES ===\n\n" + "\n\n".join([
+            f"[{doc.metadata.get('timestamp')}]\n"
+            f"User: {doc.metadata.get('sender')}\n"
+            f"Channel: {doc.metadata.get('channel')}\n"
+            f"Message: {doc.page_content}"
+            for doc in message_docs_sorted[:5]  # Limit to top 5 most relevant messages
+        ])
+        combined_context += relevant_context + "\n\n"
     
     # Add file information
     file_chunks_context, file_descriptions_context = generate_file_contexts(file_chunks, file_descriptions)
@@ -251,7 +263,7 @@ async def generate_user_bot_context(
     if file_chunks_context.strip() != "=== RELEVANT FILE CONTENT ===":
         combined_context += file_chunks_context
 
-    return combined_context 
+    return combined_context
 
 def generate_bot_prompt_template() -> PromptTemplate:
     """Generate the prompt template for bot responses."""
