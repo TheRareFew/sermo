@@ -1,43 +1,40 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
 class UserBase(BaseModel):
     username: str
-    email: EmailStr
-    full_name: str
-    is_active: bool = True
-    description: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    profile_picture: Optional[str] = None
+    status: Optional[str] = "offline"
+    is_active: Optional[bool] = True
 
-class UserCreate(UserBase):
-    password: str
+class UserCreate(BaseModel):
+    username: str
+    email: Optional[str] = None
 
 class UserUpdate(BaseModel):
-    username: Optional[str] = None
-    email: Optional[EmailStr] = None
     full_name: Optional[str] = None
-    password: Optional[str] = None
-    description: Optional[str] = None
+    email: Optional[str] = None
 
 class UserStatus(BaseModel):
-    status: str  # online, offline, away, busy
+    status: str
 
 class UserProfilePicture(BaseModel):
-    profile_picture_url: str
+    profile_picture: str
+
+class UserPresence(BaseModel):
+    id: int
+    username: str
+    status: str
+    last_seen: Optional[datetime]
 
 class User(UserBase):
     id: int
-    profile_picture_url: Optional[str] = None
-    status: str = "offline"
-    last_seen: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
+    auth0_id: Optional[str] = None
+    last_seen: Optional[datetime]
+    last_profile_generated: Optional[datetime]
 
     class Config:
-        from_attributes = True
-
-class UserPresence(BaseModel):
-    user_id: int
-    username: str
-    status: str = "offline"
-    last_seen: Optional[datetime] = None 
+        orm_mode = True 

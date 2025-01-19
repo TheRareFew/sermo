@@ -7,6 +7,7 @@ export interface User {
   status: UserStatus;
   avatar_url?: string;
   isBot?: boolean;
+  email?: string;
 }
 
 // Base types
@@ -255,4 +256,13 @@ export interface FileSearchResult {
   created_at: string;
   channel_id: string;
   channel_name: string;
+}
+
+export interface UserResponse {
+  id: string;
+  username: string;
+  status: UserStatus;
+  profile_picture_url?: string;
+  email?: string;
+  is_bot?: boolean;
 } 

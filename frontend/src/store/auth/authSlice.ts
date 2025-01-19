@@ -1,10 +1,23 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { AuthState, User, AuthResponse } from '../../types';
+import { User, UserStatus } from '../../types';
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  token: string | null;
+  user: User | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
 
 const initialState: AuthState = {
-  isAuthenticated: !!localStorage.getItem('auth_token'),
+  isAuthenticated: false,
+  token: null,
   user: null,
-  token: localStorage.getItem('auth_token'),
   loading: false,
   error: null,
 };
@@ -19,12 +32,10 @@ const authSlice = createSlice({
     },
     loginSuccess: (state, action: PayloadAction<AuthResponse>) => {
       state.isAuthenticated = true;
-      state.user = action.payload.user;
       state.token = action.payload.token;
+      state.user = action.payload.user;
       state.loading = false;
       state.error = null;
-      localStorage.setItem('auth_token', action.payload.token);
-      console.log('Auth state updated - token:', action.payload.token);
     },
     loginFailure: (state, action: PayloadAction<string>) => {
       state.loading = false;
@@ -32,8 +43,6 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       state.token = null;
       state.user = null;
-      localStorage.removeItem('auth_token');
-      console.log('Auth state cleared due to login failure');
     },
     signupStart: (state) => {
       state.loading = true;
@@ -41,12 +50,10 @@ const authSlice = createSlice({
     },
     signupSuccess: (state, action: PayloadAction<AuthResponse>) => {
       state.isAuthenticated = true;
-      state.user = action.payload.user;
       state.token = action.payload.token;
+      state.user = action.payload.user;
       state.loading = false;
       state.error = null;
-      localStorage.setItem('auth_token', action.payload.token);
-      console.log('Auth state updated after signup - token:', action.payload.token);
     },
     signupFailure: (state, action: PayloadAction<string>) => {
       state.loading = false;
@@ -54,21 +61,30 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       state.token = null;
       state.user = null;
-      localStorage.removeItem('auth_token');
-      console.log('Auth state cleared due to signup failure');
     },
     logout: (state) => {
       state.isAuthenticated = false;
-      state.user = null;
       state.token = null;
+      state.user = null;
       state.loading = false;
       state.error = null;
-      localStorage.removeItem('auth_token');
-      console.log('Auth state cleared after logout');
+    },
+    updateUserStatus: (state, action: PayloadAction<UserStatus>) => {
+      if (state.user) {
+        state.user.status = action.payload;
+      }
     },
     clearError: (state) => {
       state.error = null;
     },
+    setAuth0Token: (state, action: PayloadAction<string>) => {
+      state.token = action.payload;
+      state.isAuthenticated = true;
+    },
+    setUser: (state, action: PayloadAction<User>) => {
+      state.user = action.payload;
+      state.isAuthenticated = true;
+    }
   },
 });
 
@@ -80,7 +96,10 @@ export const {
   signupSuccess,
   signupFailure,
   logout,
+  updateUserStatus,
   clearError,
+  setAuth0Token,
+  setUser
 } = authSlice.actions;
 
 export default authSlice.reducer; 

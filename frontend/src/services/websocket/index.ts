@@ -2,21 +2,11 @@ import { Reaction, RawMessage, UserStatus, StoreMessage, RootState } from '../..
 import { store } from '../../store';
 import { addMessage, updateMessage, addReaction, removeReaction } from '../../store/messages/messagesSlice';
 import { updateUserStatus } from '../../store/chat/chatSlice';
-import { Store } from 'redux';
+import { Store } from '@reduxjs/toolkit';
 import { transformMessage } from '../../utils/messageTransform';
 import { logout } from '../../store/auth/authSlice';
-
-// Get WebSocket URL from environment variable or fallback to localhost
-const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
-
-// Helper function to get the correct WebSocket URL based on the current protocol
-const getWebSocketUrl = () => {
-  // If we're on HTTPS, use WSS
-  if (window.location.protocol === 'https:' && WS_BASE_URL.startsWith('ws:')) {
-    return WS_BASE_URL.replace('ws:', 'wss:');
-  }
-  return WS_BASE_URL;
-};
+import { getWebSocketUrl } from '../api/utils';
+import { useAuth0 } from '@auth0/auth0-react';
 
 interface BaseWebSocketMessage {
   type: string;
@@ -124,339 +114,318 @@ function isBotMessageMessage(message: WebSocketMessage): message is BotMessageMe
 
 export class WebSocketService {
   private static instance: WebSocketService | null = null;
-  private ws: WebSocket | null = null;
-  private pingInterval: NodeJS.Timeout | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
-  private channels: Set<string> = new Set();
-  private store: Store | null = null;
-  private pendingChannels: Set<string> = new Set();
-  private isReconnecting = false;
+  private static ws: WebSocket | null = null;
+  private static pingInterval: NodeJS.Timeout | null = null;
+  private static reconnectAttempts = 0;
+  private static maxReconnectAttempts = 5;
+  private static reconnectTimeout: NodeJS.Timeout | null = null;
+  private static channels: Set<string> = new Set();
+  private static store: Store | null = null;
+  private static pendingChannels: Set<string> = new Set();
+  private static isReconnecting = false;
+  private static auth0Token: string | null = null;
 
-  constructor(store: Store) {
-    this.store = store;
-    if (WebSocketService.instance) {
-      return WebSocketService.instance;
+  private constructor() {}
+
+  public static initialize(store: Store) {
+    if (!WebSocketService.instance) {
+      WebSocketService.instance = new WebSocketService();
+      WebSocketService.store = store;
     }
-    WebSocketService.instance = this;
+    return WebSocketService.instance;
   }
 
-  private getAuthToken(): string | null {
-    const state = store.getState();
-    return state.auth?.token || null;
+  public static setAuth0Token(token: string) {
+    WebSocketService.auth0Token = token;
   }
 
-  private handleConnectionError() {
+  private static getAuthToken(): string | null {
+    // First try to get token from Auth0
+    if (WebSocketService.auth0Token) {
+      console.log('Using Auth0 token');
+      return WebSocketService.auth0Token;
+    }
+
+    // Fallback to Redux store token
+    const state = store.getState() as RootState;
+    const token = state.auth?.token;
+    if (token) {
+      console.log('Using token from Redux store');
+      return token;
+    }
+
+    console.warn('No auth token available');
+    return null;
+  }
+
+  private static handleConnectionError() {
     console.error('WebSocket connection error - redirecting to login');
-    if (this.store) {
-      this.store.dispatch(logout());
+    if (WebSocketService.store) {
+      WebSocketService.store.dispatch(logout());
       window.location.href = '/login';
     }
   }
 
-  public connect() {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected, current channels:', Array.from(this.channels));
+  public static async connect() {
+    if (WebSocketService.ws?.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected');
       return;
     }
 
-    const token = this.getAuthToken();
+    const token = WebSocketService.getAuthToken();
     if (!token) {
       console.warn('No auth token available, skipping WebSocket connection');
       return;
     }
 
     const wsUrl = `${getWebSocketUrl()}?token=${token}`;
-    console.log('Connecting to WebSocket:', wsUrl);
+    console.log('Connecting to WebSocket');
     
     try {
-      this.ws = new WebSocket(wsUrl);
+      WebSocketService.ws = new WebSocket(wsUrl);
       
-      this.ws.onopen = () => {
+      WebSocketService.ws.onopen = () => {
         console.log('WebSocket connected successfully');
-        console.log('Current channels before rejoin:', Array.from(this.channels));
-        this.reconnectAttempts = 0;
-        this.isReconnecting = false;
-        this.startPingInterval();
-        
-        // Rejoin all channels
-        this.rejoinChannels();
+        WebSocketService.reconnectAttempts = 0;
+        WebSocketService.isReconnecting = false;
+        WebSocketService.startPingInterval();
+        WebSocketService.rejoinChannels();
       };
 
-      this.ws.onmessage = (event) => {
-        console.log('WebSocket message received:', event.data);
-        this.handleMessage(event);
+      WebSocketService.ws.onmessage = (event) => {
+        WebSocketService.handleMessage(event);
       };
 
-      this.ws.onclose = (event) => {
-        console.log('WebSocket disconnected with code:', event.code, 'reason:', event.reason);
-        console.log('Channels at disconnect:', Array.from(this.channels));
-        this.stopPingInterval();
+      WebSocketService.ws.onclose = (event) => {
+        console.log('WebSocket disconnected with code:', event.code);
+        WebSocketService.stopPingInterval();
         
-        // If the close was due to an authentication error (code 1008), redirect to login
         if (event.code === 1008) {
-          this.handleConnectionError();
+          WebSocketService.handleConnectionError();
         } else {
-          this.handleReconnect();
+          WebSocketService.handleReconnect();
         }
       };
 
-      this.ws.onerror = (error) => {
+      WebSocketService.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        console.log('Channels at error:', Array.from(this.channels));
+        WebSocketService.handleConnectionError();
         
-        // Handle connection error and redirect to login
-        this.handleConnectionError();
-        
-        if (!this.isReconnecting) {
-          this.handleReconnect();
+        if (!WebSocketService.isReconnecting) {
+          WebSocketService.handleReconnect();
         }
       };
     } catch (error) {
-      console.error('Error creating WebSocket connection:', error);
-      this.handleConnectionError();
-      if (!this.isReconnecting) {
-        this.handleReconnect();
-      }
+      console.error('Error establishing WebSocket connection:', error);
+      WebSocketService.handleConnectionError();
     }
   }
 
-  private async rejoinChannels() {
-    console.log('Rejoining channels:', Array.from(this.channels));
+  public static async joinChannel(channelId: string) {
+    if (!WebSocketService.ws || WebSocketService.ws.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not connected, cannot join channel');
+      return;
+    }
+
+    console.log('Joining channel:', channelId);
+    WebSocketService.channels.add(channelId);
+    WebSocketService.ws.send(JSON.stringify({ type: 'JOIN_CHANNEL', channelId }));
+  }
+
+  public static leaveChannel(channelId: string) {
+    if (!WebSocketService.ws || WebSocketService.ws.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not connected, cannot leave channel');
+      return;
+    }
+
+    console.log('Leaving channel:', channelId);
+    WebSocketService.channels.delete(channelId);
+    WebSocketService.ws.send(JSON.stringify({ type: 'LEAVE_CHANNEL', channelId }));
+  }
+
+  private static async rejoinChannels() {
+    console.log('Rejoining channels:', Array.from(WebSocketService.channels));
     
     // Wait a bit to ensure connection is stable
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Copy channels to pendingChannels
-    this.pendingChannels = new Set(this.channels);
-    console.log('Pending channels:', Array.from(this.pendingChannels));
+    WebSocketService.pendingChannels = new Set(WebSocketService.channels);
+    console.log('Pending channels:', Array.from(WebSocketService.pendingChannels));
     
     // Try to join each channel
-    for (const channelId of Array.from(this.channels)) {
+    for (const channelId of Array.from(WebSocketService.channels)) {
       try {
         console.log('Attempting to rejoin channel:', channelId);
-        await this.joinChannel(channelId);
-        this.pendingChannels.delete(channelId);
+        await WebSocketService.joinChannel(channelId);
+        WebSocketService.pendingChannels.delete(channelId);
         console.log('Successfully rejoined channel:', channelId);
-        console.log('Remaining pending channels:', Array.from(this.pendingChannels));
+        console.log('Remaining pending channels:', Array.from(WebSocketService.pendingChannels));
       } catch (error) {
         console.error(`Failed to rejoin channel ${channelId}:`, error);
       }
     }
   }
 
-  private handleReconnect() {
-    if (this.isReconnecting || this.reconnectAttempts >= this.maxReconnectAttempts) {
+  private static handleReconnect() {
+    if (WebSocketService.isReconnecting || WebSocketService.reconnectAttempts >= WebSocketService.maxReconnectAttempts) {
       return;
     }
 
-    this.isReconnecting = true;
-    this.reconnectAttempts++;
-    console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-    console.log('Channels before reconnect:', Array.from(this.channels));
+    WebSocketService.isReconnecting = true;
+    WebSocketService.reconnectAttempts++;
+    console.log(`Attempting to reconnect (${WebSocketService.reconnectAttempts}/${WebSocketService.maxReconnectAttempts})`);
+    console.log('Channels before reconnect:', Array.from(WebSocketService.channels));
     
     // Store current channels
-    const currentChannels = new Set(this.channels);
+    const currentChannels = new Set(WebSocketService.channels);
     
     // Clear existing timeout
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
+    if (WebSocketService.reconnectTimeout) {
+      clearTimeout(WebSocketService.reconnectTimeout);
     }
     
-    this.reconnectTimeout = setTimeout(() => {
-      this.connect();
+    WebSocketService.reconnectTimeout = setTimeout(() => {
+      WebSocketService.connect();
       
       // After reconnection, verify channels are rejoined
       setTimeout(() => {
         console.log('Verifying channel subscriptions after reconnect');
-        console.log('Current channels:', Array.from(this.channels));
-        console.log('Expected channels:', Array.from(currentChannels));
-        
-        currentChannels.forEach(channelId => {
-          if (!this.channels.has(channelId)) {
-            console.log('Rejoining missing channel after reconnect:', channelId);
-            this.joinChannel(channelId);
-          }
-        });
+        WebSocketService.rejoinChannels();
       }, 2000);
-    }, Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000));
+    }, 1000 * Math.min(WebSocketService.reconnectAttempts, 5));
   }
 
-  private startPingInterval() {
-    this.pingInterval = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: 'PING' }));
+  private static startPingInterval() {
+    if (WebSocketService.pingInterval) {
+      clearInterval(WebSocketService.pingInterval);
+    }
+    
+    WebSocketService.pingInterval = setInterval(() => {
+      if (WebSocketService.ws?.readyState === WebSocket.OPEN) {
+        WebSocketService.ws.send(JSON.stringify({ type: 'PING' }));
       }
     }, 30000);
   }
 
-  private stopPingInterval() {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
+  private static stopPingInterval() {
+    if (WebSocketService.pingInterval) {
+      clearInterval(WebSocketService.pingInterval);
+      WebSocketService.pingInterval = null;
     }
   }
 
-  public disconnect() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-    this.stopPingInterval();
-  }
-
-  private handleMessage(event: MessageEvent) {
+  private static handleMessage(event: MessageEvent) {
     try {
       const message: WebSocketMessage = JSON.parse(event.data);
-      console.log('Parsed WebSocket message:', message);
+      console.log('Received WebSocket message:', message);
 
       if (isReactionAddedMessage(message)) {
-        const { channelId, messageId, reaction } = message.payload;
-        store.dispatch(addReaction({ channelId, messageId, reaction }));
+        WebSocketService.handleReactionAdded(message);
       } else if (isReactionRemovedMessage(message)) {
-        const { channelId, messageId, userId, emoji } = message.payload;
-        store.dispatch(removeReaction({ channelId, messageId, userId, emoji }));
+        WebSocketService.handleReactionRemoved(message);
       } else if (isNewMessageMessage(message)) {
-        console.log('Handling NEW_MESSAGE:', message);
-        const transformedMessage = transformMessage(message.message);
-        
-        if (this.store) {
-          // Only add as a main message if it's not a reply
-          if (!transformedMessage.parent_id) {
-            this.store.dispatch(addMessage({
-              channelId: message.channelId,
-              message: transformedMessage
-            }));
-          } else {
-            // For replies, only dispatch addMessage which will handle adding it to parent's replies
-            this.store.dispatch(addMessage({
-              channelId: message.channelId,
-              message: transformedMessage
-            }));
-          }
-        }
+        WebSocketService.handleNewMessage(message);
       } else if (isUpdateMessageMessage(message)) {
-        console.log('Handling UPDATE_MESSAGE:', message);
-        if (this.store) {
-          // Only update specific fields that we know are safe
-          const safeUpdates: Partial<StoreMessage> = {
-            content: message.updates.content,
-            reactions: message.updates.reactions || [],
-            attachments: message.updates.attachments || [],
-            has_attachments: (message.updates.attachments || []).length > 0,
-            reply_count: message.updates.reply_count || 0,
-            parent_id: message.updates.parent_id ? message.updates.parent_id.toString() : undefined
-          };
-          
-          this.store.dispatch(updateMessage({
-            channelId: message.channelId,
-            messageId: message.id,
-            message: safeUpdates
-          }));
-        }
+        WebSocketService.handleUpdateMessage(message);
       } else if (isUserStatusMessage(message)) {
-        console.log('Handling USER_STATUS:', message);
-        store.dispatch(updateUserStatus({
-          userId: message.userId,
-          status: message.status
-        }));
+        WebSocketService.handleUserStatus(message);
       } else if (isBotMessageMessage(message)) {
-        console.log('Handling BOT_MESSAGE:', message);
-        const { channelId, message: botMessage } = message;
-        const transformedMessage = transformMessage({
-          ...botMessage,
-          is_bot: true
-        });
-        
-        if (this.store) {
-          this.store.dispatch(addMessage({
-            channelId,
-            message: transformedMessage
-          }));
-        }
+        WebSocketService.handleBotMessage(message);
+      } else if (message.type === 'PONG') {
+        console.log('Received PONG');
+      } else {
+        console.warn('Unknown message type:', message.type);
       }
-
-      if (message.type === 'pong') {
-        return;
-      }
-
-      console.warn('Unknown message type:', message.type);
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
     }
   }
 
-  public joinChannel(channelId: string) {
-    console.log('Joining channel:', channelId);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      console.log('WebSocket is open, sending join_channel message');
-      this.ws.send(JSON.stringify({
-        type: 'join_channel',
-        channelId
+  private static handleReactionAdded(message: ReactionAddedMessage) {
+    if (WebSocketService.store) {
+      WebSocketService.store.dispatch(addReaction({
+        channelId: message.payload.channelId,
+        messageId: message.payload.messageId,
+        reaction: message.payload.reaction
       }));
-      this.channels.add(channelId);
-      console.log('Current channels after join:', Array.from(this.channels));
-    } else {
-      console.warn('WebSocket not connected (state:', this.ws?.readyState, '), queueing channel join for:', channelId);
-      this.pendingChannels.add(channelId);
-      this.channels.add(channelId);
-      if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
-        this.connect();
-      }
     }
   }
 
-  public leaveChannel(channelId: string) {
-    console.log('Leaving channel:', channelId);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'leave_channel',
-        channelId
+  private static handleReactionRemoved(message: ReactionRemovedMessage) {
+    if (WebSocketService.store) {
+      WebSocketService.store.dispatch(removeReaction({
+        channelId: message.payload.channelId,
+        messageId: message.payload.messageId,
+        userId: message.payload.userId,
+        emoji: message.payload.emoji
       }));
-    } else {
-      console.warn('WebSocket not connected, skipping leave message for channel:', channelId);
     }
-    this.channels.delete(channelId);
-    this.pendingChannels.delete(channelId);
-    console.log('Current channels:', Array.from(this.channels));
   }
 
-  public addReaction(channelId: string, messageId: string, emoji: string) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('WebSocket not connected');
-      return;
+  private static handleNewMessage(message: NewMessageMessage) {
+    if (WebSocketService.store) {
+      const transformedMessage = transformMessage(message.message);
+      WebSocketService.store.dispatch(addMessage({
+        channelId: message.channelId,
+        message: transformedMessage
+      }));
     }
-
-    const message = {
-      type: 'add_reaction',
-      channelId,
-      messageId,
-      emoji
-    };
-
-    this.ws.send(JSON.stringify(message));
   }
 
-  public removeReaction(channelId: string, messageId: string, emoji: string) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('WebSocket not connected');
-      return;
+  private static handleUpdateMessage(message: UpdateMessageMessage) {
+    if (WebSocketService.store) {
+      const transformedUpdates: Partial<StoreMessage> = {
+        content: message.updates.content,
+        reactions: message.updates.reactions || [],
+        attachments: message.updates.attachments || [],
+        has_attachments: (message.updates.attachments || []).length > 0,
+        reply_count: message.updates.reply_count || 0,
+        parent_id: message.updates.parent_id ? message.updates.parent_id.toString() : undefined
+      };
+      WebSocketService.store.dispatch(updateMessage({
+        channelId: message.channelId,
+        messageId: message.id,
+        message: transformedUpdates
+      }));
     }
+  }
 
-    const message = {
-      type: 'remove_reaction',
-      channelId,
-      messageId,
-      emoji
-    };
+  private static handleUserStatus(message: UserStatusMessage) {
+    if (WebSocketService.store) {
+      WebSocketService.store.dispatch(updateUserStatus({
+        userId: message.userId,
+        status: message.status
+      }));
+    }
+  }
 
-    this.ws.send(JSON.stringify(message));
+  private static handleBotMessage(message: BotMessageMessage) {
+    if (WebSocketService.store) {
+      const transformedMessage = transformMessage(message.message);
+      WebSocketService.store.dispatch(addMessage({
+        channelId: message.channelId,
+        message: transformedMessage
+      }));
+    }
+  }
+
+  public static disconnect() {
+    console.log('Disconnecting WebSocket');
+    if (WebSocketService.ws) {
+      WebSocketService.ws.close();
+      WebSocketService.ws = null;
+    }
+    WebSocketService.stopPingInterval();
+    WebSocketService.channels.clear();
+    WebSocketService.pendingChannels.clear();
+    WebSocketService.reconnectAttempts = 0;
+    WebSocketService.isReconnecting = false;
+    if (WebSocketService.reconnectTimeout) {
+      clearTimeout(WebSocketService.reconnectTimeout);
+      WebSocketService.reconnectTimeout = null;
+    }
   }
 }
 
-export default new WebSocketService(store); 
+export default WebSocketService; 

@@ -12,25 +12,42 @@ from ...models.user import User
 from ...models.channel import Channel
 from ...models.message import Message as MessageModel
 from ..deps import get_db
-from ...auth.security import decode_token
+from ...auth.auth0 import verify_auth0_token, get_user_id
 from ...schemas.message import MessageCreate, Message
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 async def get_current_user_ws(token: str, db: Session) -> Optional[User]:
-    """Authenticate WebSocket connection using JWT token"""
+    """Authenticate WebSocket connection using Auth0 token"""
     try:
-        payload = decode_token(token)
-        user_id = int(payload.get("sub"))
+        # Create a mock HTTPAuthorizationCredentials object
+        class MockCredentials:
+            def __init__(self, token):
+                self.credentials = token
+                self.scheme = "Bearer"
+        
+        # Verify the token using Auth0
+        payload = await verify_auth0_token(MockCredentials(token))
+        user_id = payload.get("sub")
         if not user_id:
             logger.error("Invalid user ID in token")
             return None
             
-        user = db.query(User).filter(User.id == user_id).first()
+        # Get or create user
+        user = db.query(User).filter(User.auth0_id == user_id).first()
         if not user:
-            logger.error(f"User {user_id} not found")
-            return None
+            # Create new user from Auth0 info
+            username = payload.get("nickname") or payload.get("email", "").split("@")[0]
+            user = User(
+                auth0_id=user_id,
+                username=username,
+                email=payload.get("email"),
+                status="online"
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
             
         return user
     except Exception as e:

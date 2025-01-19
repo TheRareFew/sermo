@@ -5,6 +5,7 @@ import { BrowserRouter as Router } from 'react-router-dom';
 import { store } from './store';
 import App from './App';
 import './styles/global/index.css';
+import { Auth0ProviderWithConfig } from './providers/Auth0Provider';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
@@ -13,9 +14,11 @@ const root = ReactDOM.createRoot(
 root.render(
   <React.StrictMode>
     <Provider store={store}>
-      <Router>
-        <App />
-      </Router>
+      <Auth0ProviderWithConfig>
+        <Router>
+          <App />
+        </Router>
+      </Auth0ProviderWithConfig>
     </Provider>
   </React.StrictMode>
 ); 

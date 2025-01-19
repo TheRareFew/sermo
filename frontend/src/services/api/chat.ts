@@ -49,7 +49,7 @@ export const getChannels = async (): Promise<Channel[]> => {
   console.log('Fetching channels...');
   try {
     // All channels are accessible by default to all users
-    const channels = await apiRequest<Channel[]>('/channels');
+    const channels = await apiRequest<Channel[]>('/channels/');
     console.log('Received channels:', channels);
     return channels;
   } catch (error) {

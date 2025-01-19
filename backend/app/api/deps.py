@@ -3,10 +3,12 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
-from ..auth.security import decode_token
+from ..auth.auth0 import verify_auth0_token
 from ..models.user import User
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+security = HTTPBearer()
 
 def get_db() -> Generator:
     """Dependency for getting database session"""
@@ -17,29 +19,31 @@ def get_db() -> Generator:
         db.close()
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """Dependency for getting current authenticated user"""
     try:
-        payload = decode_token(token)
-        user_id = int(payload.get("sub"))
-        if user_id is None:
+        # Verify token using Auth0
+        payload = await verify_auth0_token(credentials)
+        auth0_id = payload.get("sub")
+        if auth0_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials"
             )
-    except ValueError:
+
+        # Get user by Auth0 ID
+        user = db.query(User).filter(User.auth0_id == auth0_id).first()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+
+        return user
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
-        )
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-
-    return user 
+            detail=str(e)
+        ) 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 import { useDispatch, useSelector } from 'react-redux';
-import { logout } from '../../../store/auth/authSlice';
+import { logout, setAuth0Token as setAuth0TokenAction, setUser } from '../../../store/auth/authSlice';
 import {
   setActiveChannel,
   setChannels,
@@ -30,6 +30,7 @@ import SearchResults from '../../common/SearchResults';
 import { getChannels, getChannelUsers, getChannelMessages, joinChannel, getReplies, getMessagePosition } from '../../../services/api/chat';
 import { searchAll } from '../../../services/api/search';
 import WebSocketService from '../../../services/websocket';
+import { API_URL, setAuth0Token as setApiAuth0Token } from '../../../services/api/utils';
 import { 
   RootState, 
   Channel, 
@@ -43,6 +44,8 @@ import {
 import ChannelSettings from '../../chat/ChannelSettings';
 import { AppDispatch } from '../../../store';
 import { store } from '../../../store';
+import { useAuth0 } from '@auth0/auth0-react';
+import { useNavigate } from 'react-router-dom';
 
 const MainContainer = styled.div`
   display: flex;
@@ -181,20 +184,10 @@ const PAGE_SIZE = 50;
 
 const MainLayout: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
-  const [searchError, setSearchError] = useState<string | undefined>();
-  const messageListRef = useRef<HTMLDivElement>(null);
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [initialScrollComplete, setInitialScrollComplete] = useState(false);
-  const isChannelSwitching = useRef<boolean>(false);
-  const lastMessageTimestamp = useRef<number | null>(null);
-  const pollingInterval = useRef<NodeJS.Timeout | null>(null);
-  const isSearchNavigation = useRef<boolean>(false);
+  const { getAccessTokenSilently } = useAuth0();
+  const navigate = useNavigate();
 
-  // Define loadInitialMessages at the very top
+  // Define loadInitialMessages first since it's used in dependencies
   const loadInitialMessages = useCallback(async (channelId: string) => {
     try {
       console.log('Loading initial messages for channel:', channelId);
@@ -211,6 +204,19 @@ const MainLayout: React.FC = () => {
       dispatch(setError('Failed to load messages'));
     }
   }, [dispatch]);
+
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
+  const [searchError, setSearchError] = useState<string | undefined>();
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [initialScrollComplete, setInitialScrollComplete] = useState(false);
+  const isChannelSwitching = useRef<boolean>(false);
+  const lastMessageTimestamp = useRef<number | null>(null);
+  const pollingInterval = useRef<NodeJS.Timeout | null>(null);
+  const isSearchNavigation = useRef<boolean>(false);
 
   // Memoize selectors
   const { channels, activeChannelId, users, currentUser } = useSelector((state: RootState) => ({
@@ -239,55 +245,78 @@ const MainLayout: React.FC = () => {
     return messages.map(msg => transformMessage(msg));
   }, []);
 
-  // Initialize WebSocket connection and handle channel subscriptions
-  useEffect(() => {
-    if (!activeChannelId) return;
-
-    console.log('Setting up WebSocket for channel:', activeChannelId);
-    
-    // Ensure WebSocket is connected
-    WebSocketService.connect();
-    
-    // Small delay to ensure WebSocket is connected before joining channel
-    const joinTimeout = setTimeout(() => {
-      console.log('Joining channel:', activeChannelId);
-      WebSocketService.joinChannel(activeChannelId);
-      
-      // Load initial messages
-      loadInitialMessages(activeChannelId);
-    }, 500);
-    
-    // Cleanup function
-    return () => {
-      clearTimeout(joinTimeout);
-      if (activeChannelId) {
-        console.log('Leaving channel:', activeChannelId);
-        WebSocketService.leaveChannel(activeChannelId);
+  const fetchUserInfo = async () => {
+    try {
+      const token = await getAccessTokenSilently();
+      const response = await fetch(`${API_URL}/users/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch user info');
       }
-    };
-  }, [activeChannelId, loadInitialMessages]);
+      const userData = await response.json();
+      dispatch(setUser({
+        id: userData.id,
+        username: userData.username,
+        status: userData.status || 'online',
+        avatar_url: userData.profile_picture_url,
+        isBot: false,
+        email: userData.email
+      }));
+    } catch (error) {
+      console.error('Error fetching user info:', error);
+    }
+  };
 
-  // Initial data fetch
+  // Initialize WebSocket service
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        console.log('Fetching initial data...');
-        const fetchedChannels = await getChannels();
-        dispatch(setChannels(fetchedChannels));
+    WebSocketService.initialize(store);
+  }, []);
 
-        if (fetchedChannels.length > 0) {
+  // Set up Auth0 token for WebSocket and API
+  useEffect(() => {
+    const setupAuth0Token = async () => {
+      try {
+        console.log('Setting up Auth0 token...');
+        const token = await getAccessTokenSilently();
+        console.log('Got Auth0 token, initializing WebSocket service...');
+        WebSocketService.initialize(store);
+        WebSocketService.setAuth0Token(token);
+        setApiAuth0Token(token);
+        dispatch(setAuth0TokenAction(token));
+        WebSocketService.connect();
+        
+        await fetchUserInfo(); // Fetch user info after setting up token
+
+        // Load initial data after token is set
+        console.log('Loading initial channels...');
+        const channels = await getChannels();
+        dispatch(setChannels(channels));
+
+        if (channels.length > 0) {
           // Find the first public channel or default to first channel
-          const firstPublicChannel = fetchedChannels.find(ch => ch.is_public) || fetchedChannels[0];
+          const firstPublicChannel = channels.find(ch => ch.is_public) || channels[0];
           dispatch(setActiveChannel(firstPublicChannel.id));
+          const channelUsers = await getChannelUsers(firstPublicChannel.id);
+          // Convert users array to object with id as key
+          const usersObject = channelUsers.reduce((acc, user) => ({
+            ...acc,
+            [user.id]: user
+          }), {});
+          dispatch(setUsers(usersObject));
+          await loadInitialMessages(firstPublicChannel.id);
         }
       } catch (error) {
-        console.error('Failed to fetch initial data:', error);
-        dispatch(setError('Failed to fetch initial data'));
+        console.error('Error in auth setup:', error);
+        dispatch(logout());
+        navigate('/login');
       }
     };
 
-    fetchInitialData();
-  }, [dispatch]);
+    setupAuth0Token();
+  }, [getAccessTokenSilently, dispatch, navigate, loadInitialMessages]);
 
   // Handle channel initialization and WebSocket subscription
   useEffect(() => {

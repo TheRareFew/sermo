@@ -7,11 +7,12 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    auth0_id = Column(String, unique=True, index=True)  # Auth0 user ID
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
-    full_name = Column(String)
+    full_name = Column(String, nullable=True)
     description = Column(String, nullable=True)
-    hashed_password = Column(String, nullable=True)
+    hashed_password = Column(String, nullable=True)  # Optional for Auth0 users
     is_active = Column(Boolean, default=True)
     profile_picture_url = Column(String, nullable=True)
     status = Column(String, default="offline")

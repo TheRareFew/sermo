@@ -325,14 +325,26 @@ async def get_channel_members(
             detail="Channel not found"
         )
     
-    # Check if user is a member
-    if current_user.id not in [m.id for m in db_channel.members]:
+    # For public channels, automatically add the user as a member if they're not already
+    if db_channel.is_public and current_user.id not in [m.id for m in db_channel.members]:
+        try:
+            db_channel.members.append(current_user)
+            db.commit()
+            db.refresh(db_channel)
+            logger.info(f"Added user {current_user.id} to public channel {channel_id}")
+        except SQLAlchemyError as e:
+            logger.error(f"Database error while adding member to public channel: {e}")
+            db.rollback()
+            # Continue even if adding fails - they can still view members
+    
+    # Check if user is a member for private channels
+    elif not db_channel.is_public and current_user.id not in [m.id for m in db_channel.members]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not a member of this channel"
         )
     
-    return db_channel.members 
+    return db_channel.members
 
 @router.get("/{channel_id}/messages", response_model=List[MessageSchema])
 async def get_channel_messages(

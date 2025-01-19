@@ -1,5 +1,7 @@
-import { getAuthToken } from './auth';
+import { store } from '../../store';
 import { handleUnauthorizedResponse } from './interceptor';
+
+let auth0Token: string | null = null;
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'headers'> {
   requiresAuth?: boolean;
@@ -7,7 +9,63 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'headers'> {
 }
 
 // Hardcode the API URL for now
-export const API_URL = 'http://localhost:8000/api';
+export const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+// Get WebSocket URL from environment variable or fallback to localhost
+const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
+
+export const getWebSocketUrl = () => {
+  // If we're on HTTPS, use WSS
+  if (window.location.protocol === 'https:' && WS_BASE_URL.startsWith('ws:')) {
+    return WS_BASE_URL.replace('ws:', 'wss:');
+  }
+  return WS_BASE_URL;
+};
+
+export const decodeJwt = (token: string) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => 
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    console.error('Error decoding JWT:', error);
+    return null;
+  }
+};
+
+export const setAuth0Token = (token: string) => {
+  auth0Token = token;
+  // Log the decoded token
+  const decoded = decodeJwt(token);
+  console.log('Setting Auth0 token with payload:', {
+    aud: decoded?.aud,
+    iss: decoded?.iss,
+    exp: decoded?.exp,
+    scope: decoded?.scope
+  });
+};
+
+export const getAuthToken = (): string | null => {
+  // First try to get token from Auth0
+  if (auth0Token) {
+    console.log('Using Auth0 token for API request');
+    return auth0Token;
+  }
+
+  // Fallback to Redux store token
+  const state = store.getState();
+  const token = state.auth.token;
+  if (token) {
+    console.log('Using Redux store token for API request');
+    return token;
+  }
+
+  console.warn('No auth token available');
+  return null;
+};
 
 export async function apiRequest<T>(
   endpoint: string,
@@ -27,12 +85,21 @@ export async function apiRequest<T>(
       console.error('No auth token available');
       throw new Error('No auth token available');
     }
+    console.log(`Using token for ${endpoint}:`, {
+      tokenStart: token.substring(0, 20) + '...',
+      decodedToken: decodeJwt(token)
+    });
     requestHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  // Remove any leading slashes from the endpoint
+  // Remove any leading slashes from the endpoint and API_URL
   const cleanEndpoint = endpoint.replace(/^\/+/, '');
-  const url = `${API_URL}/${cleanEndpoint}`;
+  const cleanApiUrl = API_URL.replace(/\/+$/, '');
+  
+  // Construct the URL, ensuring we don't duplicate /api
+  const url = cleanApiUrl.endsWith('/api') 
+    ? `${cleanApiUrl}/${cleanEndpoint}`
+    : `${cleanApiUrl}/api/${cleanEndpoint}`;
   
   console.log(`Making API request to ${url}`, {
     method: rest.method || 'GET',
@@ -44,10 +111,20 @@ export async function apiRequest<T>(
     const response = await fetch(url, {
       headers: requestHeaders,
       credentials: 'include',
+      redirect: 'follow',
       ...rest,
     });
 
+    // Handle redirects manually if needed
+    if (response.redirected) {
+      console.log(`Request was redirected to: ${response.url}`);
+    }
+
     if (response.status === 401) {
+      console.error(`401 Unauthorized for ${endpoint}`, {
+        headers: Object.fromEntries(response.headers.entries()),
+        requestHeaders
+      });
       return handleUnauthorizedResponse({ status: 401 });
     }
 

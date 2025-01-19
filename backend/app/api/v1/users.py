@@ -1,20 +1,96 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional
 import logging
 from datetime import datetime
+import httpx
 
 from ...schemas.user import (
     User, UserUpdate, UserStatus, 
-    UserProfilePicture, UserPresence
+    UserProfilePicture, UserPresence,
+    UserCreate
 )
 from ...models.user import User as UserModel
 from ..deps import get_db, get_current_user
+from ...auth.auth0 import verify_auth0_token, security
 from ...ai.profile_generator import generate_user_profile
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+@router.post("/auth0", response_model=User)
+async def create_auth0_user(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    token_payload: dict = Depends(verify_auth0_token),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """Create a new user from Auth0 credentials or update existing user's username"""
+    try:
+        # Fetch user info from Auth0
+        auth0_domain = "https://dev-fgo2qa1lzmrtvajq.us.auth0.com"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{auth0_domain}/userinfo",
+                headers={"Authorization": f"Bearer {credentials.credentials}"}
+            )
+            if response.status_code == 200:
+                user_info = response.json()
+                email = user_info.get('email')
+                logger.debug(f"Retrieved email from Auth0: {email}")
+            else:
+                logger.warning(f"Failed to fetch user info from Auth0: {response.status_code}")
+                email = None
+
+        # Check if user already exists by auth0_id
+        existing_user = db.query(UserModel).filter(
+            UserModel.auth0_id == token_payload.get("sub")
+        ).first()
+        
+        # Check if username is already taken by a different user
+        username_exists = db.query(UserModel).filter(
+            UserModel.username == user_data.username,
+            UserModel.auth0_id != token_payload.get("sub")  # Exclude current user
+        ).first()
+        
+        if username_exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Username '{user_data.username}' is already taken. Please choose a different username."
+            )
+
+        if existing_user:
+            # Update existing user's username
+            existing_user.username = user_data.username
+            if email:
+                existing_user.email = email
+            db.commit()
+            db.refresh(existing_user)
+            return existing_user
+        
+        # Create new user if they don't exist
+        new_user = UserModel(
+            username=user_data.username,
+            auth0_id=token_payload.get("sub"),
+            email=email,
+            is_active=True,
+            status="online"
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in create_auth0_user: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create user"
+        )
 
 @router.get("/me", response_model=User)
 async def get_current_user_info(
