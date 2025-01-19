@@ -16,6 +16,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     last_seen = Column(DateTime, default=lambda: datetime.now(UTC))
     last_profile_generated = Column(DateTime, nullable=True)
+    description = Column(String, nullable=True)
 
     # Relationships
     messages = relationship("Message", back_populates="sender")

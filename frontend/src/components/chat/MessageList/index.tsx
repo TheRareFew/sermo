@@ -82,6 +82,8 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
   const currentChannelRef = useRef<string | null>(channelId);
   const dispatch = useDispatch();
   const [messagesReady, setMessagesReady] = useState(true);
+  const [isViewingHistory, setIsViewingHistory] = useState(false);
+  const loadedMessageIds = useRef(new Set<string>());
 
   const { currentUser, users } = useSelector((state: RootState) => ({
     currentUser: state.auth.user,
@@ -102,6 +104,14 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
   useEffect(() => {
     currentChannelRef.current = channelId || null;
   }, []);
+
+  // Reset message cache when channel changes
+  useEffect(() => {
+    if (channelId) {
+      loadedMessageIds.current.clear();
+      messages.forEach(msg => loadedMessageIds.current.add(msg.id));
+    }
+  }, [channelId, messages]);
 
   // Add channel change handler
   useEffect(() => {
@@ -170,7 +180,6 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
     }
   }, [channelId, dispatch, targetMessageId]);
 
-  // Add loadOlderMessages before it's used
   const loadOlderMessages = useCallback(async () => {
     if (!channelId || isLoadingMore || !hasMoreMessages) return;
 
@@ -179,26 +188,63 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
       const container = containerRef.current;
       if (!container) return;
 
+      // Get the oldest message we currently have
+      const oldestMessage = messages[0];
+      if (!oldestMessage) {
+        setHasMoreMessages(false);
+        return;
+      }
+
       // Store the scroll height and a reference element before loading
       const oldScrollHeight = container.scrollHeight;
       const oldFirstMessage = container.querySelector('[data-message-id]');
       const oldFirstMessageTop = oldFirstMessage?.getBoundingClientRect().top;
 
+      // Get messages before our oldest message
       const olderMessages = await getChannelMessages(
         channelId,
         50, // limit
-        messages.length // skip
+        messages.length // skip existing messages
       );
 
+      // If we got no messages, we're at the end
       if (olderMessages.length === 0) {
         setHasMoreMessages(false);
         return;
       }
 
-      const transformedMessages = olderMessages.map(transformMessage);
+      // Sort messages by timestamp to ensure correct order
+      const sortedOlderMessages = [...olderMessages].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      // Find the cutoff point - the first message that's newer than our oldest message
+      const cutoffIndex = sortedOlderMessages.findIndex(msg => 
+        new Date(msg.created_at).getTime() >= new Date(oldestMessage.created_at).getTime()
+      );
+
+      // Take only messages before the cutoff point
+      const newMessages = cutoffIndex === -1 
+        ? sortedOlderMessages 
+        : sortedOlderMessages.slice(0, cutoffIndex);
+
+      // Additional deduplication by ID
+      const uniqueMessages = newMessages.filter(msg => 
+        !messages.some(existingMsg => existingMsg.id === msg.id)
+      );
+
+      if (uniqueMessages.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+
+      const transformedMessages = uniqueMessages.map(transformMessage);
+      
+      // Add the messages to the store
       dispatch(prependMessages({
         channelId,
-        messages: transformedMessages
+        messages: transformedMessages,
+        replace: false
       }));
 
       // After React has updated the DOM, adjust scroll position
@@ -219,13 +265,18 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
           container.scrollTop += topDifference;
         }
       });
+
+      // If we got less messages than requested or hit the cutoff, we might be near the end
+      if (olderMessages.length < 50 || cutoffIndex !== -1) {
+        setHasMoreMessages(false);
+      }
     } catch (error) {
       console.error('Error loading older messages:', error);
       setHasMoreMessages(false);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [channelId, messages.length, dispatch, isLoadingMore, hasMoreMessages]);
+  }, [channelId, messages, dispatch, isLoadingMore, hasMoreMessages]);
 
   // Simplified navigation function
   const navigateToMessage = useCallback(async (targetId: string) => {
@@ -339,12 +390,26 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
       isUserScrolling.current = true;
       clearTimeout(scrollTimeout);
 
+      // Set isViewingHistory when user scrolls up
+      const scrollPosition = container.scrollTop;
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      const isNearBottom = maxScroll - scrollPosition < 100;
+      
+      // Only update isViewingHistory if we're not near the bottom
+      if (!isNearBottom) {
+        setIsViewingHistory(true);
+      }
+
       if (container.scrollTop === 0 && !isLoadingMore && hasMoreMessages) {
         loadOlderMessages();
       }
 
       scrollTimeout = setTimeout(() => {
         isUserScrolling.current = false;
+        // Reset isViewingHistory if we're near bottom after scrolling stops
+        if (isNearBottom) {
+          setIsViewingHistory(false);
+        }
       }, 150);
     };
 
@@ -392,19 +457,43 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
 
   const handleToggleReplies = useCallback((messageId: string) => {
     if (!channelId) return;
+    
+    // Get current scroll position before toggling
+    const container = containerRef.current;
+    if (!container) return;
+
+    const scrollPosition = container.scrollTop;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    const isNearBottom = maxScroll - scrollPosition < 100;
+
+    // Store the current isViewingHistory state
+    const wasViewingHistory = isViewingHistory;
+
     dispatch(toggleReplies({ channelId, messageId }));
     
-    // After the state updates and DOM re-renders, ensure the replies are in view
+    // After the state updates and DOM re-renders, handle scroll position
     requestAnimationFrame(() => {
-      const messageElement = containerRef.current?.querySelector(`[data-message-id="${messageId}"]`);
+      const messageElement = container.querySelector(`[data-message-id="${messageId}"]`);
       if (messageElement instanceof HTMLElement) {
-        // Wait a bit for any animations to start
-        setTimeout(() => {
-          ensureElementInView(messageElement);
-        }, 100);
+        // Only scroll to bottom if we weren't viewing history and were near bottom
+        if (!wasViewingHistory && isNearBottom) {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth'
+          });
+        } else {
+          // Otherwise ensure the message and its replies are visible
+          const messageRect = messageElement.getBoundingClientRect();
+          const containerRect = container.getBoundingClientRect();
+          
+          // If message is partially or fully below the visible area
+          if (messageRect.bottom > containerRect.bottom) {
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
       }
     });
-  }, [dispatch, ensureElementInView, channelId]);
+  }, [dispatch, channelId, isViewingHistory]);
 
   const handleReply = (message: StoreMessage) => {
     setSelectedMessage(message);
@@ -476,13 +565,34 @@ const MessageList = forwardRef<HTMLDivElement, MessageListProps>((props, ref) =>
       const container = containerRef.current;
       if (!container) return;
 
-      // Scroll all the way down when content is loaded
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth'
-      });
+      // Find the message that triggered the content load
+      const messageElement = container.querySelector(`[data-message-id="${messageId}"]`);
+      if (!messageElement) return;
+
+      // Check if this message has attachments (file preview)
+      const hasAttachments = messageElement.querySelector('[data-attachment]');
+      
+      // Check if we're near the bottom
+      const scrollPosition = container.scrollTop;
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      const isNearBottom = maxScroll - scrollPosition < 100;
+
+      // Only scroll to bottom if:
+      // 1. We're near the bottom already, or
+      // 2. It's not a file preview and we're not viewing history
+      if (isNearBottom || (!hasAttachments && !isViewingHistory)) {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
     });
-  }, []);
+  }, [isViewingHistory]);
+
+  // Reset isViewingHistory when changing channels
+  useEffect(() => {
+    setIsViewingHistory(false);
+  }, [channelId]);
 
   return (
     <MessageListContainer ref={containerRef} $ready={messagesReady}>

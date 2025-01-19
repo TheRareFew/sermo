@@ -237,7 +237,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath,
   };
 
   return (
-    <PreviewContainer ref={containerRef}>
+    <PreviewContainer ref={containerRef} data-attachment="true">
       <FileIcon>{getFileIcon()}</FileIcon>
       <FileInfo>
         <FileName>{filename}</FileName>

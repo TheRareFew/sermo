@@ -9,6 +9,7 @@ class UserBase(BaseModel):
     profile_picture_url: Optional[str] = None
     status: Optional[str] = "offline"
     is_active: Optional[bool] = True
+    description: Optional[str] = None
 
 class UserCreate(BaseModel):
     username: Optional[str] = None

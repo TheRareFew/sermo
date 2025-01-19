@@ -278,13 +278,17 @@ Keep the description professional but conversational. Don't explicitly mention m
         )
         
         result = llm.invoke(prompt.format(**prompt_vars))
+        logger.info(f"Generated profile content: {result.content[:100]}...")  # Log first 100 chars
         
         # Update user's description in database
         user = db.query(User).filter(User.id == user_id).first()
         if user:
+            previous_description = user.description
             user.description = result.content
             db.commit()
-            logger.info(f"Updated profile description for user {user_id}")
+            logger.info(f"Updated profile description for user {user_id}. Previous length: {len(previous_description) if previous_description else 0}, New length: {len(result.content)}")
+        else:
+            logger.error(f"User {user_id} not found when trying to update description")
         
         return result.content
         
