@@ -505,16 +505,18 @@ async def download_file(
                 detail="File not found"
             )
 
-        # Check if user has access to the channel containing the message
-        message = db.query(Message).filter(Message.id == file.message_id).first()
-        if not message:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Associated message not found"
-            )
-
-        channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
-        if not channel or current_user.id not in [member.id for member in channel.members]:
+        # If file is attached to a message, check channel access
+        if file.message_id:
+            message = db.query(Message).filter(Message.id == file.message_id).first()
+            if message:
+                channel = db.query(Channel).filter(Channel.id == message.channel_id).first()
+                if not channel or current_user.id not in [member.id for member in channel.members]:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to access this file"
+                    )
+        # If file is not attached to a message, only allow access to the uploader
+        elif file.uploaded_by_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this file"

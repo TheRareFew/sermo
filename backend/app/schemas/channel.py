@@ -22,6 +22,6 @@ class ChannelMember(BaseModel):
 class Channel(ChannelBase):
     id: int
     created_at: datetime
-    created_by_id: int
+    created_by_id: Optional[int] = None
     
     model_config = ConfigDict(from_attributes=True) 

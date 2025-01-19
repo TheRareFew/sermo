@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getAuthToken } from './utils';
 
 // Create axios instance with default config
 export const api = axios.create({
@@ -11,7 +12,7 @@ export const api = axios.create({
 
 // Add request interceptor to include auth token
 api.interceptors.request.use((config: any) => {
-  const token = localStorage.getItem('auth_token');
+  const token = getAuthToken();
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
-import { API_URL } from '../../../services/api/utils';
+import { API_URL, getAuthToken } from '../../../services/api/utils';
 
 interface FilePreviewProps {
   filename: string;
@@ -99,7 +99,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ filename, fileType, filePath,
   const containerRef = useRef<HTMLDivElement>(null);
   
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('auth_token');
+    const token = getAuthToken();
     if (!token) {
       throw new Error('No authentication token found - please log in again');
     }

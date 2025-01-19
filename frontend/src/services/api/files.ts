@@ -1,5 +1,4 @@
-import { apiRequest, API_URL } from './utils';
-import { getAuthToken } from './auth';
+import { apiRequest, API_URL, getAuthToken } from './utils';
 import { Attachment } from '../../types';
 
 export interface FileResponse {
@@ -80,7 +79,7 @@ export const uploadFile = async (file: File, messageId?: number): Promise<FileRe
     const response = await fetch(`${API_URL}/files/upload`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${token}`
       },
       credentials: 'include',
       mode: 'cors',

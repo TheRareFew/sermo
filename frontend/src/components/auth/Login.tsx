@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import styled from 'styled-components';
-import LoginForm from './LoginForm';
+import RetroButton from '../../components/common/RetroButton';
 
 interface LoginProps {
   onLoginWithAuth0: () => void;
-  onLoginWithUsername: () => void;
 }
 
 const LoginContainer = styled.div`
@@ -64,24 +63,6 @@ const Title = styled.h1`
   text-transform: uppercase;
 `;
 
-const Button = styled.button`
-  width: 100%;
-  padding: 10px;
-  margin: 10px 0;
-  font-family: 'VT323', monospace;
-  font-size: 1.2rem;
-  background-color: ${props => props.theme.colors.primary};
-  color: ${props => props.theme.colors.text};
-  border: 2px solid ${props => props.theme.colors.border};
-  cursor: pointer;
-  text-transform: uppercase;
-  transition: all 0.2s;
-
-  &:hover {
-    background-color: ${props => props.theme.colors.primaryHover};
-  }
-`;
-
 const AsciiArt = styled.pre`
   font-family: monospace;
   color: ${props => props.theme.colors.text};
@@ -92,36 +73,25 @@ const AsciiArt = styled.pre`
   white-space: pre;
 `;
 
-const Login: React.FC<LoginProps> = ({ onLoginWithAuth0, onLoginWithUsername }) => {
-  const [showLoginForm, setShowLoginForm] = useState(false);
-
+const Login: React.FC<LoginProps> = ({ onLoginWithAuth0 }) => {
   return (
-    <>
-      <LoginContainer>
-        <LoginBox>
-          <AsciiArt>
-            {`
+    <LoginContainer>
+      <LoginBox>
+        <AsciiArt>
+          {`
     ____  _____ ____  __  __  ___  
    / ___|| ____|  _ \\|  \\/  |/ _ \\ 
    \\___ \\|  _| | |_) | |\\/| | | | |
     ___) | |___|  _ <| |  | | |_| |
    |____/|_____|_| \\_\\_|  |_|\\___/ 
-            `}
-          </AsciiArt>
-          <Title>Welcome to SERMO</Title>
-          <Button onClick={() => setShowLoginForm(true)}>
-            Login with Username
-          </Button>
-          <Button onClick={onLoginWithAuth0}>
-            Sign in with Auth0
-          </Button>
-        </LoginBox>
-      </LoginContainer>
-      <LoginForm 
-        isOpen={showLoginForm} 
-        onClose={() => setShowLoginForm(false)} 
-      />
-    </>
+          `}
+        </AsciiArt>
+        <Title>Welcome to SERMO</Title>
+        <RetroButton onClick={onLoginWithAuth0} fullWidth>
+          Sign in with Auth0
+        </RetroButton>
+      </LoginBox>
+    </LoginContainer>
   );
 };
 

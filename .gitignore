@@ -19,3 +19,4 @@ docs/todos/*
 .cursorignore
 node_modules/
 
+scripts/remove_user.py

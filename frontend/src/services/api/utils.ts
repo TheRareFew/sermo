@@ -1,5 +1,6 @@
 import { store } from '../../store';
 import { handleUnauthorizedResponse } from './interceptor';
+import { setAuth0Token as setAuth0TokenAction } from '../../store/auth/authSlice';
 
 let auth0Token: string | null = null;
 
@@ -61,6 +62,15 @@ export const getAuthToken = (): string | null => {
   if (token) {
     console.log('Using Redux store token for API request');
     return token;
+  }
+
+  // Finally try localStorage
+  const localToken = localStorage.getItem('auth_token');
+  if (localToken) {
+    console.log('Using localStorage token for API request');
+    // Update Redux store with localStorage token
+    store.dispatch(setAuth0TokenAction(localToken));
+    return localToken;
   }
 
   console.warn('No auth token available');
@@ -210,7 +220,8 @@ export async function apiRequest<T>(
 export function getAuthHeaders(): Record<string, string> {
   const token = getAuthToken();
   if (!token) {
-    throw new Error('No auth token available');
+    console.error('Authentication error: No token available');
+    throw new Error('No authentication token found - please log in again');
   }
   
   return {

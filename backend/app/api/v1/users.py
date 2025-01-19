@@ -55,7 +55,11 @@ async def create_auth0_user(
                 # Update auth0_id if it's different
                 if existing_user_by_email.auth0_id != token_payload.get("sub"):
                     existing_user_by_email.auth0_id = token_payload.get("sub")
-                    db.commit()
+                # Update username if provided
+                if user_data.username:
+                    existing_user_by_email.username = user_data.username
+                db.commit()
+                db.refresh(existing_user_by_email)
                 return existing_user_by_email
 
         # If no user found by email, check by auth0_id
@@ -94,7 +98,7 @@ async def create_auth0_user(
             is_active=True,
             status="online"
         )
-        
+
         db.add(new_user)
         db.commit()
         db.refresh(new_user)

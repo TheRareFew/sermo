@@ -49,7 +49,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const LoginRedirect: React.FC = () => {
   const { loginWithRedirect } = useAuth0();
   const location = useLocation();
-  const [showOldLogin, setShowOldLogin] = useState(true);
   
   const handleAuth0Login = () => {
     const returnUrl = location.pathname === '/login' ? '/' : location.pathname;
@@ -74,16 +73,11 @@ const LoginRedirect: React.FC = () => {
     });
   };
 
-  if (showOldLogin) {
-    return (
-      <Login 
-        onLoginWithAuth0={handleAuth0Login}
-        onLoginWithUsername={() => setShowOldLogin(false)} 
-      />
-    );
-  }
-
-  return <div>Redirecting to login...</div>;
+  return (
+    <Login 
+      onLoginWithAuth0={handleAuth0Login}
+    />
+  );
 };
 
 const CallbackPage: React.FC = () => {

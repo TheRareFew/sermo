@@ -3,6 +3,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import RetroButton from '../common/RetroButton';
 import { loginSuccess, setAuth0Token, setUser } from '../../store/auth/authSlice';
 import { setChannels, setActiveChannel, setUsers } from '../../store/chat/chatSlice';
 import { UserStatus, UserResponse, Channel, User } from '../../types';
@@ -86,27 +87,6 @@ const Input = styled.input`
   &:focus {
     outline: none;
     border-color: ${props => props.theme.colors.primary};
-  }
-`;
-
-const Button = styled.button`
-  width: 100%;
-  padding: 10px;
-  background-color: ${props => props.theme.colors.primary};
-  border: 2px solid ${props => props.theme.colors.border};
-  color: ${props => props.theme.colors.text};
-  font-family: 'VT323', monospace;
-  font-size: 1.2rem;
-  cursor: pointer;
-  text-transform: uppercase;
-
-  &:hover {
-    background-color: ${props => props.theme.colors.primaryHover};
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 `;
 
@@ -359,9 +339,9 @@ const SetupUsername: React.FC = () => {
             disabled={isLoading}
             autoFocus
           />
-          <Button type="submit" disabled={isLoading}>
+          <RetroButton type="submit" disabled={isLoading} fullWidth>
             {isLoading ? 'Setting Username...' : 'Continue'}
-          </Button>
+          </RetroButton>
           {error && <ErrorMessage>{error}</ErrorMessage>}
         </Form>
       </Box>
