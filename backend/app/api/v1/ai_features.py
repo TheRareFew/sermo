@@ -108,8 +108,7 @@ async def send_message_to_bot(
                     email="lain@sermo.ai",
                     status="online",
                     is_bot=True,
-                    full_name="Lain Iwakura",
-                    hashed_password=None
+                    full_name="Lain Iwakura"
                 )
                 db.add(bot_user)
                 db.commit()
@@ -136,8 +135,7 @@ async def send_message_to_bot(
                     email=f"{target_username}.bot@sermo.ai",
                     status="online",
                     is_bot=True,
-                    full_name=f"{target_username}'s Bot",
-                    hashed_password=None
+                    full_name=f"{target_username}'s Bot"
                 )
                 db.add(bot_user)
                 db.commit()
@@ -154,8 +152,7 @@ async def send_message_to_bot(
                 email="lain@sermo.ai",
                 status="online",
                 is_bot=True,
-                full_name="Lain Iwakura",
-                hashed_password=None
+                full_name="Lain Iwakura"
             )
             db.add(bot_user)
             db.commit()

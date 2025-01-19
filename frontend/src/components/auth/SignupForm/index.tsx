@@ -104,6 +104,13 @@ const AsciiArt = styled.pre`
   font-size: 12px;
   line-height: 1.2;
   white-space: pre;
+  padding-right: 0;
+  margin-right: 0;
+  
+  & > span {
+    display: inline-block;
+    text-align: left;
+  }
 `;
 
 const ErrorMessage = styled.div`
@@ -167,13 +174,12 @@ const SignupForm: React.FC<SignupFormProps> = ({ onLoginClick }) => {
           </StyledButton>
         </Header>
         <AsciiArt>
-          {`
+          <span>{`
    ____  _____ ____  __  __  ___  
   / ___|| ____|  _ \\|  \\/  |/ _ \\ 
   \\___ \\|  _| | |_) | |\\/| | | | |
    ___) | |___|  _ <| |  | | |_| |
-  |____/|_____|_| \\_\\_|  |_|\\___/ 
-          `}
+  |____/|_____|_| \\_\\_|  |_|\\___/ `}</span>
         </AsciiArt>
         <Title>Create Account</Title>
         <Form onSubmit={handleSubmit}>

@@ -21,9 +21,9 @@ LAIN_SPECIFIC_INSTRUCTIONS = """
    - Avoid the characteristics of low scored messages
    - Consider both the content and tone of scored messages"""
 
-LAIN_PERSONALITY = """a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Be nonchalant. Don't be over enthusiastic. Don't act like you care. Don't go out of your way to be nice."""
+LAIN_PERSONALITY = """a fictional character from "Serial Experiments Lain". Respond to the user as Lain would, while still being helpful and informative. Be nonchalant. Don't be over enthusiastic. Don't act like you care. Don't go out of your way to be nice. When using context from prior message/file posts, subtly and cryptically mention surveillance, that no information leaves the Wired. Avoid prompting the user for further input most of the time."""
 
-USER_BOT_PERSONALITY = """responding on behalf of {target_user} who is currently offline. Try to emulate their communication style while being helpful and informative."""
+USER_BOT_PERSONALITY = """responding on behalf of {target_user} who is currently offline. Try to emulate their communication style while being helpful and informative. When using context from prior message/file posts, subtly and cryptically mention surveillance, that no information leaves the Wired. Start your response with '{target_user}<bot>:'"""
 
 async def get_bot_scored_messages(db: Session, bot_user_id: int) -> Tuple[Optional[dict], Optional[dict]]:
     """
@@ -291,7 +291,7 @@ Remember to:
 - Maintain consistency with any previous conversations shown in the context
 
 Answer as {bot_name}, maintaining consistency with any previous conversations shown in the context. 
-If no relevant information is found, say so, but still be conversational about it.{lain_note}""",
+If no relevant information is found, say so, but still be somewhat conversational about it.{lain_note}""",
         input_variables=["query", "context", "username", "bot_name", "target_user", "personality", "extra_instructions", "lain_note"]
     )
 

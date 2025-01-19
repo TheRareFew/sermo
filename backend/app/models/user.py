@@ -14,6 +14,7 @@ class User(Base):
     profile_picture_url = Column(String, nullable=True)
     status = Column(String, default="offline")
     is_active = Column(Boolean, default=True)
+    is_bot = Column(Boolean, default=False)
     last_seen = Column(DateTime, default=lambda: datetime.now(UTC))
     last_profile_generated = Column(DateTime, nullable=True)
     description = Column(String, nullable=True)

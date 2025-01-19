@@ -71,6 +71,13 @@ const AsciiArt = styled.pre`
   font-size: 12px;
   line-height: 1.2;
   white-space: pre;
+  padding-right: 0;
+  margin-right: 0;
+  
+  & > span {
+    display: inline-block;
+    text-align: left;
+  }
 `;
 
 const Login: React.FC<LoginProps> = ({ onLoginWithAuth0 }) => {
@@ -78,17 +85,16 @@ const Login: React.FC<LoginProps> = ({ onLoginWithAuth0 }) => {
     <LoginContainer>
       <LoginBox>
         <AsciiArt>
-          {`
-    ____  _____ ____  __  __  ___  
-   / ___|| ____|  _ \\|  \\/  |/ _ \\ 
-   \\___ \\|  _| | |_) | |\\/| | | | |
-    ___) | |___|  _ <| |  | | |_| |
-   |____/|_____|_| \\_\\_|  |_|\\___/ 
-          `}
+          <span>{`
+ ____  _____ ____  __  __  ___  
+/ ___|| ____|  _ \\|  \\/  |/ _ \\ 
+\\___ \\|  _| | |_) | |\\/| | | | |
+ ___) | |___|  _ <| |  | | |_| |
+|____/|_____|_| \\_\\_|  |_|\\___/ `}</span>
         </AsciiArt>
-        <Title>Welcome to SERMO</Title>
+        <Title>Welcome Home</Title>
         <RetroButton onClick={onLoginWithAuth0} fullWidth>
-          Sign in with Auth0
+          Submit Credential
         </RetroButton>
       </LoginBox>
     </LoginContainer>
