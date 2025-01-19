@@ -7,20 +7,15 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    auth0_id = Column(String, unique=True, index=True)  # Auth0 user ID
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, nullable=True)  # Allow null initially
+    email = Column(String, unique=True, nullable=True)
+    auth0_id = Column(String, unique=True)
     full_name = Column(String, nullable=True)
-    description = Column(String, nullable=True)
-    hashed_password = Column(String, nullable=True)  # Optional for Auth0 users
-    is_active = Column(Boolean, default=True)
     profile_picture_url = Column(String, nullable=True)
     status = Column(String, default="offline")
-    last_seen = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
+    last_seen = Column(DateTime, default=lambda: datetime.now(UTC))
     last_profile_generated = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-    is_bot = Column(Boolean, default=False)
 
     # Relationships
     messages = relationship("Message", back_populates="sender")

@@ -38,7 +38,7 @@ class Message(MessageBase):
     id: int
     created_at: datetime
     updated_at: datetime
-    sender_id: int
+    sender_id: Optional[int] = None
     channel_id: int
     parent_id: Optional[int] = None
     reactions: List[Reaction] = []
@@ -47,3 +47,8 @@ class Message(MessageBase):
     is_bot: bool = False
 
     model_config = {"from_attributes": True} 
+
+    @property
+    def is_valid(self) -> bool:
+        """A message is valid if it has a sender_id"""
+        return self.sender_id is not None 

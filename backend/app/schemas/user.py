@@ -6,12 +6,12 @@ class UserBase(BaseModel):
     username: str
     email: Optional[str] = None
     full_name: Optional[str] = None
-    profile_picture: Optional[str] = None
+    profile_picture_url: Optional[str] = None
     status: Optional[str] = "offline"
     is_active: Optional[bool] = True
 
 class UserCreate(BaseModel):
-    username: str
+    username: Optional[str] = None
     email: Optional[str] = None
 
 class UserUpdate(BaseModel):
@@ -22,7 +22,7 @@ class UserStatus(BaseModel):
     status: str
 
 class UserProfilePicture(BaseModel):
-    profile_picture: str
+    profile_picture_url: str
 
 class UserPresence(BaseModel):
     id: int

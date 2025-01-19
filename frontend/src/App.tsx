@@ -92,99 +92,46 @@ const CallbackPage: React.FC = () => {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [waitCount, setWaitCount] = useState(0);
 
   useEffect(() => {
-    console.log('Callback - Full auth state:', {
-      isAuthenticated,
-      isLoading,
-      isProcessing,
-      auth0User,
-      hasError: !!error,
-      waitCount
-    });
+    if (!isAuthenticated || isLoading || isProcessing) {
+      return;
+    }
 
     const setupAuth = async () => {
-      // Don't proceed if we're still loading or already processing
-      if (isLoading || isProcessing) {
-        console.log('Callback - Still loading or processing');
-        return;
-      }
-
-      // Give Auth0 some time to complete authentication
-      if (!isAuthenticated && waitCount < 5) {
-        console.log('Callback - Waiting for authentication, attempt:', waitCount + 1);
-        setWaitCount(prev => prev + 1);
-        return;
-      }
-
-      // If we're not authenticated after waiting, redirect to login
-      if (!isAuthenticated) {
-        console.log('Callback - Not authenticated after waiting, redirecting to login');
-        navigate('/login', { replace: true });
-        return;
-      }
-
-      // Only proceed if we're authenticated and not processing
-      if (isAuthenticated && !isProcessing) {
+      try {
         setIsProcessing(true);
-        try {
-          console.log('Getting access token with specific audience');
-          const token = await getAccessTokenSilently({
-            authorizationParams: {
-              audience: 'http://localhost:8000/api',
-              scope: 'openid profile email offline_access'
-            },
-            detailedResponse: true
-          });
-          
-          // Log token details
-          const decodedToken = decodeJwt(token.access_token);
-          console.log('Token details in callback:', {
-            tokenAudience: decodedToken?.aud,
-            tokenIssuer: decodedToken?.iss,
-            tokenScope: decodedToken?.scope,
-            expiresIn: token.expires_in
-          });
-          
-          console.log('Setting Auth0 token in API and Redux');
-          setApiAuth0Token(token.access_token);
-          dispatch(setAuth0Token(token.access_token));
-          
-          // Navigate to setup
-          console.log('Token set, navigating to setup');
-          navigate('/setup-username', { replace: true });
-        } catch (error) {
-          console.error('Error in callback:', error);
-          setError('Failed to complete authentication. Please try again.');
-          dispatch(logout());
-          navigate('/login', { replace: true });
-        } finally {
-          setIsProcessing(false);
-        }
+        const token = await getAccessTokenSilently({
+          authorizationParams: {
+            audience: process.env.REACT_APP_AUTH0_AUDIENCE,
+            scope: 'openid profile email offline_access'
+          }
+        });
+
+        setApiAuth0Token(token);
+        dispatch(setAuth0Token(token));
+        
+        // Let Auth0Provider handle the redirection
+      } catch (error) {
+        console.error('Error in callback:', error);
+        setError(error instanceof Error ? error.message : 'Unknown error');
+      } finally {
+        setIsProcessing(false);
       }
     };
 
-    // Set up a timer to check auth state periodically
-    const timer = setTimeout(setupAuth, 1000);
-    return () => clearTimeout(timer);
+    setupAuth();
+  }, [isAuthenticated, isLoading, getAccessTokenSilently, dispatch, isProcessing]);
 
-  }, [isAuthenticated, isLoading, getAccessTokenSilently, dispatch, navigate, isProcessing, auth0User, waitCount]);
+  if (isLoading || isProcessing) {
+    return <div>Loading...</div>;
+  }
 
   if (error) {
-    return (
-      <div>
-        <p>{error}</p>
-        <button onClick={() => navigate('/login', { replace: true })}>Return to Login</button>
-      </div>
-    );
+    return <div>Error: {error}</div>;
   }
 
-  if (isLoading || isProcessing || waitCount < 5) {
-    return <div>Completing login... {waitCount > 0 ? `(Attempt ${waitCount}/5)` : ''}</div>;
-  }
-
-  return <div>Redirecting...</div>;
+  return <div>Processing login...</div>;
 };
 
 const App: React.FC = () => {
@@ -192,12 +139,26 @@ const App: React.FC = () => {
     isAuthenticated,
     isLoading,
     getAccessTokenSilently,
-    user: auth0User
+    user: auth0User,
+    logout: auth0Logout
   } = useAuth0();
   const dispatch = useDispatch();
   const { user, token } = useSelector((state: RootState) => state.auth);
   const location = useLocation();
+  const navigate = useNavigate();
   const [isTokenLoading, setIsTokenLoading] = useState(false);
+
+  // Handle logout
+  const handleLogout = () => {
+    WebSocketService.disconnect();
+    dispatch(logout());
+    auth0Logout({
+      logoutParams: {
+        returnTo: window.location.origin + '/login',
+        clientId: process.env.REACT_APP_AUTH0_CLIENT_ID
+      }
+    });
+  };
 
   // Single effect for auth state management
   useEffect(() => {
@@ -254,16 +215,30 @@ const App: React.FC = () => {
           try {
             const userData = await apiRequest<UserResponse>('/users/me');
             console.log('App - User info fetched:', userData);
-            dispatch(setUser({
-              id: userData.id,
-              username: userData.username,
-              status: userData.status || 'online',
-              avatar_url: userData.profile_picture_url,
-              isBot: false
-            }));
+            
+            if (userData.username) {
+              dispatch(setUser({
+                id: userData.id,
+                username: userData.username,
+                status: userData.status || 'online',
+                avatar_url: userData.profile_picture_url,
+                isBot: false
+              }));
+              
+              // If we have a username, navigate to home
+              if (location.pathname === '/setup-username') {
+                navigate('/', { replace: true });
+              }
+            } else if (location.pathname !== '/setup-username') {
+              // No username, redirect to setup if not already there
+              navigate('/setup-username', { replace: true });
+            }
           } catch (error) {
             if (error instanceof Error && error.message.includes('404')) {
               console.log('App - User not found, will redirect to username setup');
+              if (location.pathname !== '/setup-username') {
+                navigate('/setup-username', { replace: true });
+              }
               return;
             }
             console.error('App - Error fetching user info:', error);
@@ -280,7 +255,7 @@ const App: React.FC = () => {
       } catch (error) {
         console.error('App - Error setting up auth:', error);
         if (error instanceof Error && !error.message.includes('401')) {
-          dispatch(logout());
+          handleLogout();
         }
       } finally {
         setIsTokenLoading(false);
@@ -288,7 +263,7 @@ const App: React.FC = () => {
     };
 
     setupAuth();
-  }, [isAuthenticated, isLoading, auth0User, user, token, getAccessTokenSilently, dispatch, location.pathname]);
+  }, [isAuthenticated, isLoading, auth0User, user, token, getAccessTokenSilently, dispatch, location.pathname, navigate]);
 
   if (isLoading || isTokenLoading) {
     console.log('App - Still loading');
@@ -307,7 +282,7 @@ const App: React.FC = () => {
         } />
         <Route path="/*" element={
           <ProtectedRoute>
-            <MainLayout />
+            <MainLayout onLogout={handleLogout} />
           </ProtectedRoute>
         } />
       </Routes>

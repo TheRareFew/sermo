@@ -56,73 +56,77 @@ def get_signing_key(token: str) -> Optional[str]:
         logger.error(f"Error getting signing key: {str(e)}")
         return None
 
-def get_token_audience() -> Union[str, List[str]]:
-    """
-    Get the expected audience(s) from environment variable.
-    Returns a list of audiences or a single audience string.
-    """
-    audience = os.getenv("AUTH0_AUDIENCE")
-    logger.debug(f"Raw audience from env: {audience}")
-    
-    if not audience:
-        return []
-    
-    # If the audience contains commas, treat it as a list
-    if ',' in audience:
-        audiences = [aud.strip() for aud in audience.split(',')]
-        logger.debug(f"Multiple audiences: {audiences}")
-        return audiences
-    
-    logger.debug(f"Single audience: {audience}")
-    return audience
-
 async def verify_auth0_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Verify the Auth0 JWT token and return the payload if valid.
-    """
+    """Verify Auth0 token and return payload if valid."""
     try:
         token = credentials.credentials
         logger.debug("Starting token verification")
         
         # Get the signing key
-        public_key = get_signing_key(token)
-        if not public_key:
-            logger.error("No matching signing key found")
+        signing_key = get_signing_key(token)
+        if not signing_key:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token - no matching signing key"
+                detail="Unable to find appropriate key to verify token"
             )
-            
-        logger.debug("Attempting to decode token")
         
-        # Get issuer from env
-        issuer = f"https://{os.getenv('AUTH0_DOMAIN')}/"
-        audience = get_token_audience()
-        logger.debug(f"Expected issuer: {issuer}")
-        logger.debug(f"Expected audience: {audience}")
+        # Get expected values
+        expected_issuer = f"https://{os.getenv('AUTH0_DOMAIN')}/"
+        expected_audience = os.getenv("AUTH0_AUDIENCE")
         
-        # Decode and verify the token
+        # First decode without verification to check the audience
         try:
-            payload = jwt.decode(
+            unverified_payload = jwt.decode(
                 token,
-                public_key,
-                algorithms=["RS256"],
-                audience=audience,
-                issuer=issuer,
+                signing_key,
+                algorithms=[os.getenv("AUTH0_ALGORITHMS", "RS256")],
                 options={
-                    "verify_at_hash": False,
+                    "verify_signature": True,
+                    "verify_aud": False,
+                    "verify_iss": False
                 }
             )
+            
+            # Get token audience(s)
+            token_audience = unverified_payload.get('aud', [])
+            if isinstance(token_audience, str):
+                token_audience = [token_audience]
+            
+            # Check if our expected audience is in the token's audience list
+            if expected_audience not in token_audience:
+                logger.error(f"Invalid audience. Expected {expected_audience}, got {token_audience}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid audience"
+                )
+            
+            # Now verify everything else
+            payload = jwt.decode(
+                token,
+                signing_key,
+                algorithms=[os.getenv("AUTH0_ALGORITHMS", "RS256")],
+                issuer=expected_issuer,
+                options={
+                    "verify_aud": False  # We already verified the audience
+                }
+            )
+            
             logger.debug(f"Token successfully decoded. Payload: {json.dumps(payload, indent=2)}")
             return payload
             
-        except JWTError as decode_error:
-            logger.error(f"Error decoding token: {str(decode_error)}")
+        except jwt.ExpiredSignatureError:
+            logger.error("Token has expired")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Token verification failed: {str(decode_error)}"
+                detail="Token has expired"
             )
-        
+        except Exception as e:
+            logger.error(f"Error decoding token: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(e)
+            )
+            
     except Exception as e:
         logger.error(f"Unexpected error during token verification: {str(e)}")
         raise HTTPException(

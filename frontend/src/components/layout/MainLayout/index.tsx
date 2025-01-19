@@ -182,7 +182,12 @@ const SearchContainer = styled.div`
 // Constants
 const PAGE_SIZE = 50;
 
-const MainLayout: React.FC = () => {
+// Add onLogout to the component props
+interface MainLayoutProps {
+  onLogout: () => void;
+}
+
+const MainLayout: React.FC<MainLayoutProps> = ({ onLogout }) => {
   const dispatch = useDispatch<AppDispatch>();
   const { getAccessTokenSilently } = useAuth0();
   const navigate = useNavigate();
@@ -442,11 +447,6 @@ const MainLayout: React.FC = () => {
     setSearchResults(null);
   };
 
-  // Handle logout
-  const handleLogout = () => {
-    dispatch(logout());
-  };
-
   // Sort channels by type
   const sortedChannels = useMemo(() => {
     return [...channels].sort((a, b) => a.name.localeCompare(b.name));
@@ -584,7 +584,7 @@ const MainLayout: React.FC = () => {
             />
           ))}
         </UserList>
-        <LogoutButton onClick={handleLogout}>
+        <LogoutButton onClick={onLogout}>
           Logout
         </LogoutButton>
       </Sidebar>

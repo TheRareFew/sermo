@@ -51,6 +51,7 @@ async def get_channel_messages(
             db.query(MessageModel)
             .filter(MessageModel.channel_id == channel_id)
             .filter(MessageModel.parent_id.is_(None))  # Only get top-level messages
+            .filter(MessageModel.sender_id.isnot(None))  # Filter out messages with null sender_id
             .options(
                 joinedload(MessageModel.reactions),
                 joinedload(MessageModel.sender),

@@ -44,26 +44,42 @@ async def create_auth0_user(
                 logger.warning(f"Failed to fetch user info from Auth0: {response.status_code}")
                 email = None
 
-        # Check if user already exists by auth0_id
+        # First check if user exists by email
+        if email:
+            existing_user_by_email = db.query(UserModel).filter(
+                UserModel.email == email
+            ).first()
+            
+            if existing_user_by_email:
+                logger.info(f"Found existing user with email {email}")
+                # Update auth0_id if it's different
+                if existing_user_by_email.auth0_id != token_payload.get("sub"):
+                    existing_user_by_email.auth0_id = token_payload.get("sub")
+                    db.commit()
+                return existing_user_by_email
+
+        # If no user found by email, check by auth0_id
         existing_user = db.query(UserModel).filter(
             UserModel.auth0_id == token_payload.get("sub")
         ).first()
         
         # Check if username is already taken by a different user
-        username_exists = db.query(UserModel).filter(
-            UserModel.username == user_data.username,
-            UserModel.auth0_id != token_payload.get("sub")  # Exclude current user
-        ).first()
-        
-        if username_exists:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Username '{user_data.username}' is already taken. Please choose a different username."
-            )
+        if user_data.username:
+            username_exists = db.query(UserModel).filter(
+                UserModel.username == user_data.username,
+                UserModel.auth0_id != token_payload.get("sub")  # Exclude current user
+            ).first()
+
+            if username_exists:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Username '{user_data.username}' is already taken. Please choose a different username."
+                )
 
         if existing_user:
-            # Update existing user's username
-            existing_user.username = user_data.username
+            # Update existing user's username if provided
+            if user_data.username:
+                existing_user.username = user_data.username
             if email:
                 existing_user.email = email
             db.commit()
@@ -306,3 +322,50 @@ async def generate_profile(
     except SQLAlchemyError as e:
         logger.error(f"Database error in generate_profile: {e}")
         raise HTTPException(status_code=500, detail="Could not generate profile") 
+
+@router.get("/check-exists", response_model=dict)
+async def check_user_exists(
+    db: Session = Depends(get_db),
+    token_payload: dict = Depends(verify_auth0_token)
+):
+    """Check if a user exists in the database based on their Auth0 ID"""
+    try:
+        user = db.query(UserModel).filter(
+            UserModel.auth0_id == token_payload.get("sub")
+        ).first()
+        
+        return {"exists": user is not None}
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in check_user_exists: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not check user existence"
+        ) 
+
+@router.post("/check-exists-by-email", response_model=dict)
+async def check_user_exists_by_email(
+    email_data: dict,
+    db: Session = Depends(get_db),
+    token_payload: dict = Depends(verify_auth0_token)
+):
+    """Check if a user exists in the database based on their email"""
+    try:
+        if not email_data.get("email"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email is required"
+            )
+
+        user = db.query(UserModel).filter(
+            UserModel.email == email_data["email"]
+        ).first()
+        
+        return {"exists": user is not None}
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in check_user_exists_by_email: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not check user existence"
+        ) 
